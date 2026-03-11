@@ -16,6 +16,7 @@
     "@mahjong/engine": "workspace:*",
     "@mahjong/shared": "workspace:*",
     "@react-native/assets-registry": "^0.84.0",
+    "@supabase/supabase-js": "^2.99.1",
     "expo": "~51.0.0",
     "expo-av": "~14.0.7",
     "expo-constants": "^16.0.2",
