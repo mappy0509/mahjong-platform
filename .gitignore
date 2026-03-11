@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+coverage/
+.expo/
+ios/
+android/
+*.log
+
+# Redis source / binary artifacts
+redis-stable/
+redis-stable.tar.gz
+
+# Temp files
+lsof_output.txt

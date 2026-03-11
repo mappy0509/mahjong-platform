@@ -1,0 +1,60 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:3000/api",
+        "EXPO_PUBLIC_WS_URL": "http://localhost:3000",
+        "EXPO_PUBLIC_STORE_REVIEW_MODE": "false"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.com/api",
+        "EXPO_PUBLIC_WS_URL": "https://api.example.com",
+        "EXPO_PUBLIC_STORE_REVIEW_MODE": "false"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.com/api",
+        "EXPO_PUBLIC_WS_URL": "https://api.example.com",
+        "EXPO_PUBLIC_STORE_REVIEW_MODE": "false"
+      }
+    },
+    "store-review": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.example.com/api",
+        "EXPO_PUBLIC_WS_URL": "https://api.example.com",
+        "EXPO_PUBLIC_STORE_REVIEW_MODE": "true"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "CHANGE_ME",
+        "ascAppId": "CHANGE_ME",
+        "appleTeamId": "CHANGE_ME"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-services.json",
+        "track": "internal"
+      }
+    }
+  }
+}

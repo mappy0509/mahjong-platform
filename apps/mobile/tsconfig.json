@@ -1,0 +1,10 @@
+{
+  "extends": "@mahjong/typescript-config/react-native.json",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "app", "**/*.ts", "**/*.tsx"]
+}

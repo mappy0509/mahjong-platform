@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PLATFORMER
+  CLUB_OWNER
+  AGENT
+  PLAYER
+}
+
+enum ClubMemberRole {
+  OWNER
+  AGENT
+  MEMBER
+}
+
+enum RoomStatus {
+  WAITING
+  PLAYING
+  FINISHED
+}
+
+enum PointTransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  GAME_RESULT
+  GAME_FEE
+  ADJUSTMENT
+}
+
+enum DiamondTransactionType {
+  PURCHASE    // L1 sells diamonds to L2
+  REFUND      // L1 refunds diamonds
+  CLUB_FEE   // Platform fee from club operations
+  ADJUSTMENT  // Manual correction
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String
+  role         UserRole @default(PLAYER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships         ClubMembership[]
+  gameParticipants    GameParticipant[]
+  pointTransactions   PointTransaction[]
+  diamondTransactions DiamondTransaction[]
+}
+
+model Club {
+  id                 String   @id @default(uuid())
+  name               String
+  description        String?
+  inviteCode         String   @unique
+  ownerId            String
+  isApprovalRequired Boolean  @default(false) // Require owner approval for new members
+  defaultRules       Json?    // Default GameRuleConfig for new rooms
+  feePercent         Float    @default(0)     // Game fee percentage (0-100)
+  gpsRestrictionKm   Float    @default(0)     // Max distance between players in km (0 = disabled)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  memberships       ClubMembership[]
+  gameRooms         GameRoom[]
+  pointTransactions PointTransaction[]
+  invitations       ClubInvitation[]
+}
+
+model ClubMembership {
+  id        String         @id @default(uuid())
+  userId    String
+  clubId    String
+  role      ClubMemberRole @default(MEMBER)
+  alias     String?        // Agent-assigned display name
+  createdAt DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
+
+  @@unique([userId, clubId])
+}
+
+model GameRoom {
+  id        String     @id @default(uuid())
+  clubId    String
+  name      String
+  status    RoomStatus @default(WAITING)
+  rules     Json       // GameRuleConfig
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  club         Club              @relation(fields: [clubId], references: [id])
+  participants GameParticipant[]
+  eventLogs    GameEventLog[]
+  results      GameResult[]
+}
+
+model GameParticipant {
+  id       String @id @default(uuid())
+  roomId   String
+  userId   String
+  seat     Int    // 0-3
+  isReady  Boolean @default(false)
+
+  room GameRoom @relation(fields: [roomId], references: [id])
+  user User     @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, seat])
+  @@unique([roomId, userId])
+}
+
+// Append-only event log (no UPDATE/DELETE)
+model GameEventLog {
+  id        String   @id @default(uuid())
+  roomId    String
+  sequence  Int
+  eventType String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  room GameRoom @relation(fields: [roomId], references: [id])
+
+  @@unique([roomId, sequence])
+  @@index([roomId])
+}
+
+model GameResult {
+  id           String @id @default(uuid())
+  roomId       String
+  roundNumber  Int
+  resultData   Json   // RoundResult
+  scoreChanges Json   // Record<SeatIndex, number>
+  createdAt    DateTime @default(now())
+
+  room GameRoom @relation(fields: [roomId], references: [id])
+
+  @@index([roomId])
+}
+
+// Club invitation for agent/member onboarding
+model ClubInvitation {
+  id           String           @id @default(uuid())
+  clubId       String
+  inviterId    String           // OWNER or AGENT who sent the invitation
+  inviteeId    String?          // Target user (null if invite code based)
+  targetRole   ClubMemberRole   @default(MEMBER)
+  status       InvitationStatus @default(PENDING)
+  message      String?
+  createdAt    DateTime         @default(now())
+  expiresAt    DateTime?
+  respondedAt  DateTime?
+
+  club Club @relation(fields: [clubId], references: [id])
+
+  @@index([clubId, status])
+  @@index([inviteeId, status])
+}
+
+// Append-only point transaction ledger (no UPDATE/DELETE)
+model PointTransaction {
+  id            String               @id @default(uuid())
+  userId        String
+  clubId        String
+  type          PointTransactionType
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  referenceId   String?              // Game result reference
+  description   String?
+  prevHash      String?              // Hash of previous transaction (chain)
+  hash          String?              // SHA-256 hash of this record
+  createdAt     DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
+
+  @@index([userId, clubId])
+  @@index([clubId])
+}
+
+// Append-only diamond ledger — platform currency (L1 ↔ L2)
+model DiamondTransaction {
+  id            String                 @id @default(uuid())
+  userId        String                 // Club owner (L2)
+  type          DiamondTransactionType
+  amount        Int
+  balanceBefore Int
+  balanceAfter  Int
+  operatorId    String?                // L1 who processed the transaction
+  referenceId   String?                // Related transaction reference
+  description   String?
+  prevHash      String?                // Hash chain
+  hash          String?
+  createdAt     DateTime               @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
