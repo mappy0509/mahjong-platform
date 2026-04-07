@@ -1,6 +1,9 @@
 import { getSupabaseAdmin, getSupabaseUser, corsHeaders, jsonResponse, errorResponse } from "../_shared/supabase-admin.ts";
 import { GameMachine } from "../_shared/engine.js";
 
+// Special action handled outside the engine: advance from ROUND_RESULT to next round
+const NEXT_ROUND = "NEXT_ROUND";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders() });
@@ -28,8 +31,7 @@ Deno.serve(async (req) => {
       .single();
     if (!participant) return errorResponse("Not a participant in this game", 403);
 
-    // Use PostgreSQL advisory lock via raw SQL for concurrency control
-    // Lock, read state, apply action, write back, unlock — all in one transaction
+    // Read current session state
     const { data: session, error: sessionError } = await admin
       .from("game_sessions")
       .select("state, version")
@@ -37,29 +39,125 @@ Deno.serve(async (req) => {
       .single();
     if (sessionError || !session) return errorResponse("Game session not found", 404);
 
-    // Restore game machine from saved state
-    const machine = new GameMachine(session.state);
+    // Strip our sidecar metadata before passing to engine
+    const rawState = (session.state ?? {}) as Record<string, unknown>;
+    const { _pendingAdvance, ...gameState } = rawState as { _pendingAdvance?: { dealerWon: boolean; isDraw: boolean } };
 
-    // Process the action
-    const events = machine.processAction({
-      seat: participant.seat as 0 | 1 | 2 | 3,
-      action,
-      tileId,
-      tiles,
-    });
+    const machine = new GameMachine(gameState);
 
-    if (events.length === 0) {
-      return errorResponse("Invalid action");
+    let events: any[] = [];
+
+    // ===== NEXT_ROUND special handling =====
+    if (action === NEXT_ROUND) {
+      const meta = _pendingAdvance;
+      if (!meta) {
+        // Nothing to advance — return current state
+        return jsonResponse({ success: true, events: [], skipped: true });
+      }
+      events = machine.advanceToNextRound(meta.dealerWon, meta.isDraw);
+      if (events.length === 0) {
+        return errorResponse("Cannot advance round in current state", 400);
+      }
+    } else {
+      // ===== Normal action processing =====
+      events = machine.processAction({
+        seat: participant.seat as 0 | 1 | 2 | 3,
+        action,
+        tileId,
+        tiles,
+      });
+      if (events.length === 0) {
+        return errorResponse("Invalid action");
+      }
     }
 
     const newState = machine.getState();
     const newVersion = session.version + 1;
 
+    // Detect round result and store dealerWon/isDraw for next NEXT_ROUND
+    let nextPendingAdvance: { dealerWon: boolean; isDraw: boolean } | null = null;
+    let roundResult: any = null;
+    let finalResult: any = null;
+
+    const lastEvent: any = events[events.length - 1];
+
+    if (lastEvent?.type === "TSUMO") {
+      const winnerSeat = lastEvent.seat;
+      const dealerWon = winnerSeat === newState.dealerSeat;
+      nextPendingAdvance = { dealerWon, isDraw: false };
+      roundResult = {
+        type: "TSUMO",
+        seat: lastEvent.seat,
+        yaku: lastEvent.yaku,
+        han: lastEvent.han,
+        fu: lastEvent.fu,
+        score: lastEvent.score,
+        scoreChanges: lastEvent.scoreChanges,
+        winners: [{ seat: lastEvent.seat, isTsumo: true, yaku: lastEvent.yaku, han: lastEvent.han, fu: lastEvent.fu, score: lastEvent.score }],
+      };
+    } else if (lastEvent?.type === "RON") {
+      const winners = lastEvent.winners ?? [];
+      const dealerWon = winners.some((w: any) => w.seat === newState.dealerSeat);
+      nextPendingAdvance = { dealerWon, isDraw: false };
+      roundResult = {
+        type: "RON",
+        winners: winners.map((w: any) => ({ ...w, isTsumo: false })),
+        loserSeat: lastEvent.loserSeat,
+        scoreChanges: lastEvent.scoreChanges,
+      };
+    } else if (lastEvent?.type === "DRAW_ROUND") {
+      const dealerInTenpai = (lastEvent.tenpaiPlayers ?? []).includes(newState.dealerSeat);
+      nextPendingAdvance = { dealerWon: dealerInTenpai, isDraw: true };
+      roundResult = {
+        type: "DRAW_ROUND",
+        reason: lastEvent.reason,
+        tenpaiPlayers: lastEvent.tenpaiPlayers,
+        scoreChanges: lastEvent.scoreChanges,
+      };
+    } else if (lastEvent?.type === "GAME_END") {
+      // Build final result with rankings (after NEXT_ROUND advanced into game end)
+      const scores = newState.scores;
+      const { data: gameEndParticipants } = await admin
+        .from("game_participants")
+        .select("user_id, seat")
+        .eq("room_id", roomId)
+        .order("seat");
+      const userIdsForGameEnd = (gameEndParticipants ?? []).map((p: any) => p.user_id);
+      const { data: gameEndProfiles } = await admin
+        .from("profiles")
+        .select("id, display_name")
+        .in("id", userIdsForGameEnd);
+      const gameEndNameMap = new Map((gameEndProfiles ?? []).map((p: any) => [p.id, p.display_name]));
+      const rankings = (gameEndParticipants ?? []).map((p: any) => ({
+        seat: p.seat,
+        userId: p.user_id,
+        name: gameEndNameMap.get(p.user_id) ?? `Player ${p.seat + 1}`,
+        finalScore: scores[p.seat],
+        umaScore: 0,
+        totalPoints: 0,
+      }));
+      // Apply uma based on rules
+      const uma = newState.rules?.uma ?? [30, 10, -10, -30];
+      const sorted = [...rankings].sort((a: any, b: any) => b.finalScore - a.finalScore);
+      sorted.forEach((r: any, i: number) => {
+        r.umaScore = uma[i] ?? 0;
+        r.totalPoints = Math.round((r.finalScore - 25000) / 1000) + r.umaScore;
+      });
+      finalResult = { rankings: sorted };
+    }
+
+    // Build the state JSON to save (with sidecar metadata if needed)
+    const stateToSave: any = JSON.parse(JSON.stringify(newState));
+    if (nextPendingAdvance) {
+      stateToSave._pendingAdvance = nextPendingAdvance;
+    }
+    // Note: when action === NEXT_ROUND, we don't add _pendingAdvance, so it gets cleared.
+
     // Save updated state (optimistic concurrency via version check)
     const { error: updateError } = await admin
       .from("game_sessions")
       .update({
-        state: JSON.parse(JSON.stringify(newState)),
+        state: stateToSave,
         version: newVersion,
       })
       .eq("room_id", roomId)
@@ -82,70 +180,47 @@ Deno.serve(async (req) => {
     const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
     const playerNames = (participants ?? []).map((p: any) => nameMap.get(p.user_id) ?? `Player ${p.seat + 1}`);
 
-    // Check for round result or game end
-    const gamePhase = newState.gamePhase;
-    let roundResult = null;
-    let finalResult = null;
-
-    // Check if we need to handle round end or game end
-    const lastEvent = events[events.length - 1];
-    if (lastEvent?.type === "TSUMO" || lastEvent?.type === "RON" || lastEvent?.type === "DRAW_ROUND") {
-      roundResult = {
-        reason: lastEvent.type === "DRAW_ROUND" ? lastEvent.reason : lastEvent.type.toLowerCase(),
-        scoreChanges: lastEvent.scoreChanges,
-        ...(lastEvent.type === "TSUMO" ? {
-          winners: [{ seat: lastEvent.seat, yaku: lastEvent.yaku, han: lastEvent.han, fu: lastEvent.fu, score: lastEvent.score }],
-        } : {}),
-        ...(lastEvent.type === "RON" ? { winners: lastEvent.winners } : {}),
-        ...(lastEvent.type === "DRAW_ROUND" ? { tenpaiPlayers: lastEvent.tenpaiPlayers } : {}),
-      };
-    }
-
-    if (lastEvent?.type === "GAME_END") {
-      // Build final result with rankings
-      const scores = newState.scores;
-      const rankings = (participants ?? []).map((p: any, idx: number) => ({
-        seat: p.seat,
-        userId: p.user_id,
-        name: playerNames[idx],
-        finalScore: scores[p.seat],
-        umaScore: 0,
-        totalPoints: 0,
-      }));
-      rankings.sort((a: any, b: any) => b.finalScore - a.finalScore);
-      finalResult = { rankings };
-    }
-
     // Update all 4 player views
     for (const p of (participants ?? [])) {
       const view = machine.getPlayerView(p.seat as 0 | 1 | 2 | 3, playerNames);
 
+      const updateFields: any = {
+        view: JSON.parse(JSON.stringify(view)),
+        version: newVersion,
+      };
+      // On NEXT_ROUND, clear the previous round result and final result
+      if (action === NEXT_ROUND) {
+        updateFields.round_result = null;
+        updateFields.final_result = finalResult ? JSON.parse(JSON.stringify(finalResult)) : null;
+      } else {
+        if (roundResult) updateFields.round_result = JSON.parse(JSON.stringify(roundResult));
+        if (finalResult) updateFields.final_result = JSON.parse(JSON.stringify(finalResult));
+      }
+
       await admin
         .from("player_views")
-        .update({
-          view: JSON.parse(JSON.stringify(view)),
-          round_result: roundResult ? JSON.parse(JSON.stringify(roundResult)) : null,
-          final_result: finalResult ? JSON.parse(JSON.stringify(finalResult)) : null,
-          version: newVersion,
-        })
+        .update(updateFields)
         .eq("room_id", roomId)
         .eq("seat_index", p.seat);
     }
 
-    // Log events
-    const eventLog = machine.getEventLog();
-    const newEvents = eventLog.slice(eventLog.length - events.length);
-    for (let i = 0; i < newEvents.length; i++) {
-      await admin.from("game_event_logs").insert({
-        room_id: roomId,
-        sequence: session.version + i,
-        event_type: newEvents[i].type,
-        payload: JSON.parse(JSON.stringify(newEvents[i])),
-      });
+    // Log events using state.eventSequence for unique sequence numbers
+    const baseSeq = newState.eventSequence - events.length;
+    for (let i = 0; i < events.length; i++) {
+      try {
+        await admin.from("game_event_logs").insert({
+          room_id: roomId,
+          sequence: baseSeq + i + 1,
+          event_type: events[i].type,
+          payload: JSON.parse(JSON.stringify(events[i])),
+        });
+      } catch {
+        // Best-effort logging — ignore conflicts
+      }
     }
 
     // If game ended, update room status
-    if (lastEvent?.type === "GAME_END") {
+    if (finalResult) {
       await admin
         .from("game_rooms")
         .update({ status: "finished" })

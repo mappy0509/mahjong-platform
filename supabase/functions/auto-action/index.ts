@@ -1,7 +1,7 @@
 import { getSupabaseAdmin, corsHeaders, jsonResponse, errorResponse } from "../_shared/supabase-admin.ts";
 import { GameMachine } from "../_shared/engine.js";
 
-const TURN_TIMEOUT_MS = 30_000;
+const TURN_TIMEOUT_MS = 60_000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -32,10 +32,13 @@ Deno.serve(async (req) => {
     let processed = 0;
     for (const session of timedOutSessions) {
       try {
-        const machine = new GameMachine(session.state);
+        // Strip pending advance metadata before passing to engine
+        const rawState = session.state ?? {};
+        const { _pendingAdvance: _ignored, ...gameState } = rawState as Record<string, unknown>;
+        const machine = new GameMachine(gameState);
         const state = machine.getState();
 
-        if (state.gamePhase !== 1) continue; // Not PLAYING
+        if (state.gamePhase !== "PLAYING") continue;
 
         const round = state.round;
         if (!round) continue;
@@ -43,9 +46,9 @@ Deno.serve(async (req) => {
         let events: any[] = [];
 
         // Auto-discard if it's someone's turn
-        if (round.phase === 1) { // DISCARD phase
+        if (round.phase === "DISCARD") {
           events = machine.autoDiscard(round.currentTurn);
-        } else if (round.phase === 2) { // CLAIM phase
+        } else if (round.phase === "CLAIM") {
           events = machine.autoSkipAllClaims();
         }
 

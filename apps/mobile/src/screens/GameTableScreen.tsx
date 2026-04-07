@@ -42,6 +42,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
     error,
     isConnected,
     sendAction,
+    advanceRound,
     sendStamp,
     lastStamp,
     subscribe,
@@ -196,8 +197,11 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
 
   const handleCloseResult = useCallback(() => {
     setShowResult(false);
-    // Server will auto-advance to next round
-  }, []);
+    // Tell the server to advance to the next round (or end the game)
+    if (!finalResult) {
+      advanceRound(roomId);
+    }
+  }, [advanceRound, roomId, finalResult]);
 
   const handleBack = useCallback(() => {
     disconnect();

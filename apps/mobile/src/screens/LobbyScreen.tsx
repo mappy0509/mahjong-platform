@@ -34,6 +34,7 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const [clubs, setClubs] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [inviteCode, setInviteCode] = useState("");
+  const [newClubName, setNewClubName] = useState("");
   const [roomName, setRoomName] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -168,27 +169,35 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const joinClub = async () => {
     if (!inviteCode.trim()) return;
     try {
-      // Find club by invite code
-      const { data: club, error } = await supabase
-        .from("clubs")
-        .select("id")
-        .eq("invite_code", inviteCode.trim())
-        .single();
-      if (error || !club) {
-        Alert.alert("エラー", "招待コードが無効です");
+      const { error } = await supabase.rpc("join_club_by_code", {
+        p_invite_code: inviteCode.trim(),
+      });
+      if (error) {
+        Alert.alert("エラー", error.message ?? "招待コードが無効です");
         return;
       }
-
-      // Join the club
-      const { error: joinError } = await supabase
-        .from("club_memberships")
-        .insert({ club_id: club.id, user_id: user?.id });
-      if (joinError) throw joinError;
-
       setInviteCode("");
       loadClubs();
     } catch {
       Alert.alert("エラー", "クラブ参加に失敗しました");
+    }
+  };
+
+  const createClub = async () => {
+    if (!newClubName.trim()) return;
+    try {
+      const { error } = await supabase.rpc("create_club", {
+        p_name: newClubName.trim(),
+        p_description: null,
+      });
+      if (error) {
+        Alert.alert("エラー", error.message ?? "クラブ作成に失敗しました");
+        return;
+      }
+      setNewClubName("");
+      loadClubs();
+    } catch {
+      Alert.alert("エラー", "クラブ作成に失敗しました");
     }
   };
 
@@ -312,6 +321,19 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="新規クラブ名"
+            placeholderTextColor="#4a6070"
+            value={newClubName}
+            onChangeText={setNewClubName}
+          />
+          <TouchableOpacity style={styles.createBtn} onPress={createClub}>
+            <Text style={styles.actionBtnText}>作成</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.sectionTitle}>参加中のクラブ</Text>
 
         {loading ? (
@@ -333,7 +355,7 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
                 <View style={styles.listItemContent}>
                   <Text style={styles.listItemTitle}>{item.name}</Text>
                   <Text style={styles.listItemSub}>
-                    {item.description || "クラブ"}
+                    招待コード: {item.invite_code}
                   </Text>
                 </View>
                 <Text style={styles.listArrow}>›</Text>

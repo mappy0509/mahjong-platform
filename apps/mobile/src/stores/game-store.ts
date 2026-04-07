@@ -33,6 +33,7 @@ interface GameState {
     tileId?: TileId,
     tiles?: TileId[]
   ) => Promise<void>;
+  advanceRound: (roomId: string) => Promise<void>;
   sendStamp: (roomId: string, stampId: StampId) => Promise<void>;
   disconnect: () => void;
 }
@@ -167,6 +168,21 @@ export const useGameStore = create<GameState>((set, get) => ({
     } catch (err) {
       set({
         error: err instanceof Error ? err.message : "Action failed",
+      });
+    }
+  },
+
+  advanceRound: async (roomId) => {
+    try {
+      await invokeEdge("game-action", {
+        roomId,
+        action: "NEXT_ROUND",
+      });
+      // Clear local round result so the modal does not re-trigger
+      set({ roundResult: null });
+    } catch (err) {
+      set({
+        error: err instanceof Error ? err.message : "Failed to advance round",
       });
     }
   },

@@ -43,8 +43,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ ready: true, allReady: false, playersReady: participants.filter((p: any) => p.is_ready).length });
     }
 
+    // Guard: don't double-start if a session already exists
+    const { data: existingSession } = await admin
+      .from("game_sessions")
+      .select("room_id")
+      .eq("room_id", roomId)
+      .maybeSingle();
+    if (existingSession) {
+      return jsonResponse({ ready: true, allReady: true, gameStarted: true, alreadyStarted: true });
+    }
+
     // All ready — start the game!
-    // Get room rules
     const { data: room } = await admin
       .from("game_rooms")
       .select("rules")
@@ -59,6 +68,11 @@ Deno.serve(async (req) => {
       .in("id", userIds);
     const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
 
+    // Build playerNames array indexed by seat
+    const playerNames: string[] = participants.map(
+      (p: any) => nameMap.get(p.user_id) ?? `Player ${p.seat + 1}`,
+    );
+
     // Create game machine and start game
     const machine = new GameMachine();
     const seed = Date.now();
@@ -66,42 +80,48 @@ Deno.serve(async (req) => {
 
     const state = machine.getState();
 
-    // Save game session
-    await admin.from("game_sessions").insert({
+    // Save game session FIRST so concurrent ready-up calls hit the guard
+    const { error: sessionInsertError } = await admin.from("game_sessions").insert({
       room_id: roomId,
       state: JSON.parse(JSON.stringify(state)),
       version: 1,
     });
+    if (sessionInsertError) {
+      // Most likely concurrent insert — treat as already started
+      return jsonResponse({ ready: true, allReady: true, gameStarted: true, alreadyStarted: true });
+    }
 
-    // Create player views for each seat
+    // Create player views for each seat (upsert to be safe on retries)
     for (const p of participants) {
-      const playerView = machine.getPlayerView(
-        p.seat as 0 | 1 | 2 | 3,
-        (profiles ?? []).map((pr: any) => ({
-          name: pr.display_name,
-          isConnected: true,
-        })),
-      );
+      const playerView = machine.getPlayerView(p.seat as 0 | 1 | 2 | 3, playerNames);
 
-      // Map player names correctly by seat
-      const viewWithNames = {
-        ...playerView,
-        players: playerView.players.map((pv: any, idx: number) => ({
-          ...pv,
-          name: nameMap.get(participants[idx]?.user_id) ?? `Player ${idx + 1}`,
-        })),
-      };
-
-      await admin.from("player_views").insert({
+      await admin.from("player_views").upsert({
         room_id: roomId,
         seat_index: p.seat,
         user_id: p.user_id,
-        view: JSON.parse(JSON.stringify(viewWithNames)),
+        view: JSON.parse(JSON.stringify(playerView)),
+        round_result: null,
+        final_result: null,
         version: 1,
       });
     }
 
-    // Update room status to playing
+    // Log GAME_START / ROUND_START / DRAW_TILE events for replay
+    const startEvents = machine.getEventLog();
+    for (let i = 0; i < startEvents.length; i++) {
+      try {
+        await admin.from("game_event_logs").insert({
+          room_id: roomId,
+          sequence: i + 1,
+          event_type: startEvents[i].type,
+          payload: JSON.parse(JSON.stringify(startEvents[i])),
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
+    // Update room status to playing — this is what the lobby subscribes to
     await admin
       .from("game_rooms")
       .update({ status: "playing" })
