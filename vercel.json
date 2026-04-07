@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd packages/shared && npx tsc && cd ../mahjong-engine && npx tsc && cd ../../apps/mobile && npx expo export --platform web",
+  "buildCommand": "cd packages/shared && npx tsc && cd ../mahjong-engine && npx tsc && cd ../../apps/mobile && npx expo export --platform web && node scripts/inject-landscape-lock.js",
   "outputDirectory": "apps/mobile/dist",
   "installCommand": "npm install -g pnpm && pnpm install",
   "framework": null,

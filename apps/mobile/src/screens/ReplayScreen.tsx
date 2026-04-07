@@ -10,7 +10,14 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
-import { getGameReplay, type GameReplayData } from "../api/client";
+import { supabase } from "../lib/supabase";
+
+interface GameReplayData {
+  roomId: string;
+  rules: any;
+  players: { userId: string; seat: number }[];
+  events: { sequence: number; eventType: string; payload: any; createdAt: string }[];
+}
 import { useAuthStore } from "../stores/auth-store";
 import { gameReducer, createInitialState } from "@mahjong/engine";
 import type { GameState, GameEvent } from "@mahjong/engine";
@@ -106,7 +113,32 @@ export function ReplayScreen({ roomId, onBack }: ReplayScreenProps) {
 
   const loadReplay = async () => {
     try {
-      const data = await getGameReplay(roomId);
+      // Fetch replay data from Supabase
+      const { data: events } = await supabase
+        .from("game_event_logs")
+        .select("sequence, event_type, payload, created_at")
+        .eq("room_id", roomId)
+        .order("sequence");
+      const { data: participants } = await supabase
+        .from("game_participants")
+        .select("user_id, seat")
+        .eq("room_id", roomId);
+      const { data: room } = await supabase
+        .from("game_rooms")
+        .select("rules")
+        .eq("id", roomId)
+        .single();
+      const data: GameReplayData = {
+        roomId,
+        rules: room?.rules ?? {},
+        players: (participants ?? []).map((p: any) => ({ userId: p.user_id, seat: p.seat })),
+        events: (events ?? []).map((e: any) => ({
+          sequence: e.sequence,
+          eventType: e.event_type,
+          payload: e.payload,
+          createdAt: e.created_at,
+        })),
+      };
       setReplayData(data);
 
       // Build state history by replaying events through the reducer

@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { apiRequest } from "../api/client";
+import { supabase } from "../lib/supabase";
 
 // Configure notification handler (how notifications are displayed when app is in foreground)
 Notifications.setNotificationHandler({
@@ -51,14 +51,17 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const tokenData = await Notifications.getExpoPushTokenAsync();
     const token = tokenData.data;
 
-    // Send token to server
+    // Save push token to profile
     try {
-      await apiRequest("/users/me/push-token", {
-        method: "POST",
-        body: JSON.stringify({ token, platform: Platform.OS }),
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from("profiles")
+          .update({ push_token: token })
+          .eq("id", user.id);
+      }
     } catch {
-      // Server endpoint may not exist yet; token still usable locally
+      // Profile column may not exist yet; token still usable locally
     }
 
     return token;

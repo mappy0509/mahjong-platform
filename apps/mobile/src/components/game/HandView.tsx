@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, ScrollView, StyleSheet } from "react-native";
 import type { TileId } from "@mahjong/shared";
 import { TileView, type TileSize } from "./TileView";
 
@@ -9,6 +9,8 @@ interface HandViewProps {
   interactive?: boolean;
   size?: TileSize;
   drawnTile?: TileId | null; // show separator before drawn tile
+  scrollable?: boolean; // wrap in horizontal ScrollView (portrait mode)
+  drawnTileGap?: number; // gap between main hand and drawn tile
 }
 
 export function HandView({
@@ -17,6 +19,8 @@ export function HandView({
   interactive = false,
   size = "md",
   drawnTile,
+  scrollable = false,
+  drawnTileGap = 10,
 }: HandViewProps) {
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
 
@@ -46,7 +50,7 @@ export function HandView({
     }
   }
 
-  return (
+  const content = (
     <View style={styles.container}>
       <View style={styles.mainHand}>
         {mainTiles.map((tileId, idx) => (
@@ -60,7 +64,7 @@ export function HandView({
         ))}
       </View>
       {separatedDrawn !== null && (
-        <View style={styles.drawnTileSeparator}>
+        <View style={[styles.drawnTileSeparator, { marginLeft: drawnTileGap }]}>
           <TileView
             tileId={separatedDrawn}
             selected={selectedTile === separatedDrawn}
@@ -73,6 +77,21 @@ export function HandView({
       )}
     </View>
   );
+
+  if (scrollable) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+      >
+        {content}
+      </ScrollView>
+    );
+  }
+
+  return content;
 }
 
 const styles = StyleSheet.create({
@@ -86,8 +105,11 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   drawnTileSeparator: {
-    marginLeft: 10, // gap between hand and drawn tile
     flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  scrollContent: {
+    paddingHorizontal: 8,
     alignItems: "flex-end",
   },
 });

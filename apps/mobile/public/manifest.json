@@ -1,0 +1,17 @@
+{
+  "name": "麻雀 - クローズド プラットフォーム",
+  "short_name": "麻雀",
+  "description": "麻雀クローズドプラットフォーム",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a1628",
+  "theme_color": "#0a1628",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}

@@ -8,9 +8,10 @@ const WIND_CHARS = ["東", "南", "西", "北"];
 interface GameInfoProps {
   view: PlayerGameView;
   dealerSeat?: SeatIndex;
+  minSize?: number;
 }
 
-export function GameInfo({ view, dealerSeat = 0 }: GameInfoProps) {
+export function GameInfo({ view, dealerSeat = 0, minSize }: GameInfoProps) {
   // Relative wind positions from my perspective:
   // mySeat is always at bottom, so:
   // bottom = mySeat's wind, right = (mySeat+1)%4, top = (mySeat+2)%4, left = (mySeat+3)%4
@@ -38,7 +39,7 @@ export function GameInfo({ view, dealerSeat = 0 }: GameInfoProps) {
     <View style={styles.container}>
       {/* Octagonal center panel */}
       <View style={styles.outerFrame}>
-        <View style={styles.innerPanel}>
+        <View style={[styles.innerPanel, minSize != null && { minWidth: minSize, minHeight: minSize }]}>
           {/* Top edge - top player's wind */}
           <View style={styles.topEdge}>
             <View style={[styles.windBadge, isCurrentTop && styles.windBadgeActive]}>

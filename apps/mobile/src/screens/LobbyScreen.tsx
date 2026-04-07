@@ -13,11 +13,9 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
-import { apiRequest } from "../api/client";
+import { supabase } from "../lib/supabase";
 import { useAuthStore } from "../stores/auth-store";
 import { useGameStore } from "../stores/game-store";
-import { WS_EVENTS } from "@mahjong/shared";
-import { getSocket, connectSocket, disconnectSocket } from "../api/socket";
 
 interface LobbyScreenProps {
   onBack: () => void;
@@ -31,7 +29,7 @@ type LobbyView =
 
 export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const { user, logout } = useAuthStore();
-  const { initListeners, readyUp } = useGameStore();
+  const { joinRoom: gameJoinRoom, readyUp, subscribe } = useGameStore();
   const [lobbyView, setLobbyView] = useState<LobbyView>({ type: "clubs" });
   const [clubs, setClubs] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -46,40 +44,87 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
     loadClubs();
   }, []);
 
-  // Listen for room updates when in waiting room
+  // Subscribe to room updates when in waiting room
   useEffect(() => {
     if (lobbyView.type !== "waiting") return;
 
-    const socket = getSocket();
-    connectSocket();
+    // Subscribe to game_participants changes for this room
+    const channel = supabase
+      .channel(`waiting:${lobbyView.roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "game_participants",
+          filter: `room_id=eq.${lobbyView.roomId}`,
+        },
+        () => {
+          // Reload room info when participants change
+          loadRoomInfo(lobbyView.roomId);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "game_rooms",
+          filter: `id=eq.${lobbyView.roomId}`,
+        },
+        (payload) => {
+          const row = payload.new as any;
+          if (row.status === "playing") {
+            // Game started! Navigate to game screen
+            onJoinRoom(lobbyView.roomId);
+          }
+        }
+      )
+      .subscribe();
 
-    const handleRoomUpdated = (room: any) => {
-      setRoomInfo(room);
-    };
-
-    const handleGameStarted = () => {
-      onJoinRoom(lobbyView.roomId);
-    };
-
-    socket.on(WS_EVENTS.ROOM_UPDATED, handleRoomUpdated);
-    socket.on(WS_EVENTS.GAME_STARTED, handleGameStarted);
-
-    initListeners();
-    socket.emit(WS_EVENTS.ROOM_JOIN, { roomId: lobbyView.roomId });
+    // Load initial room info
+    loadRoomInfo(lobbyView.roomId);
 
     return () => {
-      socket.off(WS_EVENTS.ROOM_UPDATED, handleRoomUpdated);
-      socket.off(WS_EVENTS.GAME_STARTED, handleGameStarted);
+      supabase.removeChannel(channel);
     };
   }, [lobbyView]);
+
+  const loadRoomInfo = async (roomId: string) => {
+    const { data: participants } = await supabase
+      .from("game_participants")
+      .select(`
+        seat,
+        is_ready,
+        user_id,
+        profiles:user_id (display_name)
+      `)
+      .eq("room_id", roomId)
+      .order("seat");
+
+    setRoomInfo({
+      participants: (participants ?? []).map((p: any) => ({
+        seat: p.seat,
+        isReady: p.is_ready,
+        user: { displayName: p.profiles?.display_name ?? "???" },
+      })),
+    });
+  };
 
   const loadClubs = async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<any[]>("/clubs");
-      setClubs(data);
+      const { data, error } = await supabase
+        .from("club_memberships")
+        .select(`
+          club_id,
+          clubs:club_id (id, name, description, invite_code)
+        `)
+        .eq("user_id", user?.id ?? "");
+      if (error) throw error;
+      setClubs((data ?? []).map((m: any) => m.clubs).filter(Boolean));
     } catch {
-      // No clubs yet
+      setClubs([]);
     }
     setLoading(false);
   };
@@ -87,8 +132,23 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const loadRooms = async (clubId: string) => {
     setLoading(true);
     try {
-      const data = await apiRequest<any[]>(`/games/clubs/${clubId}/rooms`);
-      setRooms(data);
+      const { data, error } = await supabase
+        .from("game_rooms")
+        .select(`
+          id,
+          name,
+          status,
+          rules,
+          game_participants (seat)
+        `)
+        .eq("club_id", clubId)
+        .in("status", ["waiting", "playing"])
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setRooms((data ?? []).map((r: any) => ({
+        ...r,
+        participants: r.game_participants,
+      })));
     } catch {
       setRooms([]);
     }
@@ -108,14 +168,27 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const joinClub = async () => {
     if (!inviteCode.trim()) return;
     try {
-      await apiRequest("/clubs/join", {
-        method: "POST",
-        body: JSON.stringify({ inviteCode: inviteCode.trim() }),
-      });
+      // Find club by invite code
+      const { data: club, error } = await supabase
+        .from("clubs")
+        .select("id")
+        .eq("invite_code", inviteCode.trim())
+        .single();
+      if (error || !club) {
+        Alert.alert("エラー", "招待コードが無効です");
+        return;
+      }
+
+      // Join the club
+      const { error: joinError } = await supabase
+        .from("club_memberships")
+        .insert({ club_id: club.id, user_id: user?.id });
+      if (joinError) throw joinError;
+
       setInviteCode("");
       loadClubs();
     } catch {
-      Alert.alert("エラー", "招待コードが無効です");
+      Alert.alert("エラー", "クラブ参加に失敗しました");
     }
   };
 
@@ -127,23 +200,23 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const createRoom = async () => {
     if (lobbyView.type !== "rooms" || !roomName.trim()) return;
     try {
-      const room = await apiRequest<any>("/games/rooms", {
-        method: "POST",
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke("create-room", {
+        body: {
           clubId: lobbyView.clubId,
           name: roomName.trim(),
-        }),
+        },
       });
+      if (error) throw error;
       setRoomName("");
-      enterWaitingRoom(room.id, room.name);
+      enterWaitingRoom(data.room.id, data.room.name);
     } catch {
       Alert.alert("エラー", "ルーム作成に失敗しました");
     }
   };
 
-  const joinRoom = async (room: any) => {
+  const handleJoinRoom = async (room: any) => {
     try {
-      await apiRequest(`/games/rooms/${room.id}/join`, { method: "POST" });
+      await gameJoinRoom(room.id);
       enterWaitingRoom(room.id, room.name);
     } catch {
       Alert.alert("エラー", "ルーム参加に失敗しました");
@@ -156,14 +229,15 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
     setLobbyView({ type: "waiting", roomId, roomName: name });
   };
 
-  const handleReady = () => {
+  const handleReady = async () => {
     if (lobbyView.type !== "waiting") return;
-    readyUp(lobbyView.roomId);
     setIsReady(true);
+    await readyUp(lobbyView.roomId);
+    // Subscribe for realtime game updates
+    await subscribe(lobbyView.roomId);
   };
 
   const handleLeaveRoom = () => {
-    disconnectSocket();
     setLobbyView({ type: "clubs" });
     loadClubs();
   };
@@ -311,14 +385,14 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
             }
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.listItem, item.status !== "WAITING" && styles.listItemDisabled]}
-                onPress={() => joinRoom(item)}
-                disabled={item.status !== "WAITING"}
+                style={[styles.listItem, item.status !== "waiting" && styles.listItemDisabled]}
+                onPress={() => handleJoinRoom(item)}
+                disabled={item.status !== "waiting"}
               >
                 <View
                   style={[
                     styles.listItemIcon,
-                    item.status === "PLAYING" && styles.listItemIconPlaying,
+                    item.status === "playing" && styles.listItemIconPlaying,
                   ]}
                 >
                   <Text style={styles.listItemIconText}>🀄</Text>
@@ -327,10 +401,10 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
                   <Text style={styles.listItemTitle}>{item.name}</Text>
                   <Text style={styles.listItemSub}>
                     {item.participants?.length ?? 0}/4人
-                    {item.status === "PLAYING" ? " ・ 対局中" : " ・ 待機中"}
+                    {item.status === "playing" ? " ・ 対局中" : " ・ 待機中"}
                   </Text>
                 </View>
-                {item.status === "WAITING" && (
+                {item.status === "waiting" && (
                   <Text style={styles.joinText}>参加</Text>
                 )}
               </TouchableOpacity>

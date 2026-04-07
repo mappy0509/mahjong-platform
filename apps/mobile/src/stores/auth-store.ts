@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "../api/client";
+import { supabase } from "../lib/supabase";
 
 interface AuthState {
   isLoggedIn: boolean;
@@ -21,6 +21,20 @@ interface AuthState {
   ) => Promise<void>;
 }
 
+async function fetchProfile(userId: string) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, display_name")
+    .eq("id", userId)
+    .single();
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    username: data.username,
+    displayName: data.display_name,
+  };
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   isLoggedIn: false,
   user: null,
@@ -28,28 +42,54 @@ export const useAuthStore = create<AuthState>((set) => ({
   error: null,
 
   init: async () => {
-    const hasToken = await api.initAuth();
-    if (hasToken) {
-      try {
-        const user = await api.apiRequest<any>("/users/me");
-        set({ isLoggedIn: true, user, isLoading: false });
-      } catch {
-        await api.clearTokens();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id);
+        if (profile) {
+          set({ isLoggedIn: true, user: profile, isLoading: false });
+        } else {
+          set({ isLoggedIn: false, user: null, isLoading: false });
+        }
+      } else {
         set({ isLoggedIn: false, user: null, isLoading: false });
       }
-    } else {
-      set({ isLoading: false });
+    } catch {
+      set({ isLoggedIn: false, user: null, isLoading: false });
     }
+
+    // Listen for auth state changes (token refresh, sign out, etc.)
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_OUT") {
+        set({ isLoggedIn: false, user: null });
+      } else if (event === "TOKEN_REFRESHED" && session?.user) {
+        const profile = await fetchProfile(session.user.id);
+        if (profile) {
+          set({ isLoggedIn: true, user: profile });
+        }
+      }
+    });
   },
 
   login: async (username, password) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api.login(username, password);
-      set({ isLoggedIn: true, user: data.user, isLoading: false });
+      // Supabase Auth uses email — we use username@mahjong.local as convention
+      const email = `${username}@mahjong.local`;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw new Error(error.message);
+      if (!data.user) throw new Error("ログインに失敗しました");
+
+      const profile = await fetchProfile(data.user.id);
+      if (!profile) throw new Error("プロフィールが見つかりません");
+
+      set({ isLoggedIn: true, user: profile, isLoading: false });
     } catch (err) {
       set({
-        error: err instanceof Error ? err.message : "Login failed",
+        error: err instanceof Error ? err.message : "ログインに失敗しました",
         isLoading: false,
       });
     }
@@ -58,29 +98,54 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (username, password, displayName) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api.register(username, password, displayName);
-      set({ isLoggedIn: true, user: data.user, isLoading: false });
+      const email = `${username}@mahjong.local`;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username, display_name: displayName },
+        },
+      });
+      if (error) throw new Error(error.message);
+      if (!data.user) throw new Error("登録に失敗しました");
+
+      // Profile is auto-created by trigger; fetch it
+      // Small delay to allow trigger to execute
+      await new Promise<void>((r) => setTimeout(r, 500));
+      const profile = await fetchProfile(data.user.id);
+      if (!profile) throw new Error("プロフィール作成に失敗しました");
+
+      set({ isLoggedIn: true, user: profile, isLoading: false });
     } catch (err) {
       set({
-        error: err instanceof Error ? err.message : "Registration failed",
+        error: err instanceof Error ? err.message : "登録に失敗しました",
         isLoading: false,
       });
     }
   },
 
   logout: async () => {
-    await api.logout();
+    await supabase.auth.signOut();
     set({ isLoggedIn: false, user: null });
   },
 
   updateDisplayName: async (displayName) => {
-    const updated = await api.updateProfile(displayName);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("ログインしていません");
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: displayName })
+      .eq("id", user.id);
+    if (error) throw new Error(error.message);
+
     set((state) => ({
-      user: state.user ? { ...state.user, displayName: updated.displayName } : null,
+      user: state.user ? { ...state.user, displayName } : null,
     }));
   },
 
-  changePassword: async (currentPassword, newPassword) => {
-    await api.changePassword(currentPassword, newPassword);
+  changePassword: async (_currentPassword, newPassword) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw new Error(error.message);
   },
 }));

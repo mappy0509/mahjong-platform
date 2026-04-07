@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import * as ScreenOrientation from "expo-screen-orientation";
 import type { TileId, SeatIndex, PlayerGameView } from "@mahjong/shared";
 import {
   ActionType,
@@ -44,6 +43,7 @@ import type { StampId } from "@mahjong/shared";
 import { DiceRollOverlay } from "../components/game/DiceRollOverlay";
 import { DealingOverlay } from "../components/game/DealingOverlay";
 import { SeatDrawOverlay } from "../components/game/SeatDrawOverlay";
+import { useGameLayout } from "../hooks/useGameLayout";
 
 const HUMAN_SEAT = 0 as SeatIndex;
 const BOT_NAMES = ["あなた", "CPU東", "CPU南", "CPU西"];
@@ -56,6 +56,7 @@ interface DemoGameScreenProps {
 }
 
 export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
+  const layout = useGameLayout();
   const machineRef = useRef<GameMachine>(new GameMachine());
   const [view, setView] = useState<PlayerGameView | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -89,20 +90,22 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
     callEffect,
   } = useGameEffects();
 
-  // Lock to landscape on mount, initialize sounds, restore on unmount
+  // Initialize sounds on mount
   useEffect(() => {
-    ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE
-    ).catch(() => { });
     initSounds();
-    return () => {
-      ScreenOrientation.unlockAsync().catch(() => { });
-    };
   }, []);
 
   // Turn timer: count down from 20s, reset on turn change
+  // Pause during ceremonies (seat draw, dice roll, dealing)
   useEffect(() => {
     turnTimerRef.current = setInterval(() => {
+      // Freeze timer during ceremonies
+      if (showSeatDraw || showDiceRoll || showDealing) {
+        turnStartRef.current = Date.now();
+        setTurnTimerMs(TURN_TIMEOUT_MS);
+        return;
+      }
+
       const elapsed = Date.now() - turnStartRef.current;
       const remaining = Math.max(0, TURN_TIMEOUT_MS - elapsed);
       setTurnTimerMs(remaining);
@@ -479,7 +482,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
         style={styles.tableGradient}
       >
         {/* ====== TOP PLAYER AREA ====== */}
-        <View style={styles.topArea}>
+        <View style={[styles.topArea, { paddingHorizontal: layout.topAreaPaddingH }]}>
           <View style={styles.topPlayerRow}>
             <View style={styles.topTilesContainer}>
               {!isCeremony && (
@@ -487,11 +490,11 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
                   <View style={styles.topHandRow}>
                     {Array.from({ length: view.players[topIdx].handCount }).map(
                       (_, i) => (
-                        <BackTile key={i} size="xs" />
+                        <BackTile key={i} size={layout.opponentTileSize} />
                       )
                     )}
                   </View>
-                  <MeldView melds={view.players[topIdx].melds} size="xs" />
+                  <MeldView melds={view.players[topIdx].melds} size={layout.opponentTileSize} />
                 </>
               )}
             </View>
@@ -513,7 +516,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
         {/* ====== MIDDLE SECTION ====== */}
         <View style={styles.middleArea}>
           {/* LEFT PLAYER */}
-          <View style={styles.leftPlayerArea}>
+          <View style={[styles.sidePlayerArea, { width: layout.sidePlayerWidth }]}>
             <PlayerPanel
               name={view.players[leftIdx].name}
               score={view.players[leftIdx].score}
@@ -530,7 +533,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
               <View style={styles.verticalHand}>
                 {Array.from({ length: view.players[leftIdx].handCount }).map(
                   (_, i) => (
-                    <BackTile key={i} size="xs" />
+                    <BackTile key={i} size={layout.opponentTileSize} />
                   )
                 )}
               </View>
@@ -540,25 +543,25 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
           {/* CENTER TABLE AREA */}
           <View style={styles.centerTable}>
             <View style={styles.topDiscards}>
-              <DiscardPile tiles={view.players[topIdx].discards} size="xs" position="top" />
+              <DiscardPile tiles={view.players[topIdx].discards} size={layout.opponentTileSize} position="top" />
             </View>
 
             <View style={styles.centerMiddleRow}>
-              <View style={styles.sideDiscards}>
-                <DiscardPile tiles={view.players[leftIdx].discards} size="xs" position="left" />
+              <View style={[styles.sideDiscards, { maxWidth: layout.sideDiscardMaxWidth }]}>
+                <DiscardPile tiles={view.players[leftIdx].discards} size={layout.opponentTileSize} position="left" />
               </View>
 
-              <GameInfo view={view} dealerSeat={dealerSeat} />
+              <GameInfo view={view} dealerSeat={dealerSeat} minSize={layout.centerInfoMinSize} />
 
-              <View style={styles.sideDiscards}>
-                <DiscardPile tiles={view.players[rightIdx].discards} size="xs" position="right" />
+              <View style={[styles.sideDiscards, { maxWidth: layout.sideDiscardMaxWidth }]}>
+                <DiscardPile tiles={view.players[rightIdx].discards} size={layout.opponentTileSize} position="right" />
               </View>
             </View>
 
             <View style={styles.bottomDiscards}>
               <DiscardPile
                 tiles={view.players[mySeat].discards}
-                size="xs"
+                size={layout.opponentTileSize}
                 lastDiscard={view.lastDiscard?.tileId}
                 position="bottom"
               />
@@ -566,7 +569,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
           </View>
 
           {/* RIGHT PLAYER */}
-          <View style={styles.rightPlayerArea}>
+          <View style={[styles.sidePlayerArea, { width: layout.sidePlayerWidth }]}>
             <PlayerPanel
               name={view.players[rightIdx].name}
               score={view.players[rightIdx].score}
@@ -583,7 +586,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
               <View style={styles.verticalHand}>
                 {Array.from({ length: view.players[rightIdx].handCount }).map(
                   (_, i) => (
-                    <BackTile key={i} size="xs" />
+                    <BackTile key={i} size={layout.opponentTileSize} />
                   )
                 )}
               </View>
@@ -594,7 +597,7 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
         {/* ====== BOTTOM PLAYER (ME) AREA ====== */}
         <View style={styles.bottomArea}>
           <View style={styles.myMeldsRow}>
-            <MeldView melds={view.players[mySeat].melds} size="sm" />
+            <MeldView melds={view.players[mySeat].melds} size={layout.meldTileSize} />
           </View>
 
           <View style={styles.myHandRow}>
@@ -617,7 +620,9 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
                   tiles={view.myHand}
                   onDiscard={handleDiscard}
                   interactive={interactive}
-                  size="md"
+                  size={layout.handTileSize}
+                  scrollable={layout.handScrollable}
+                  drawnTileGap={layout.drawnTileGap}
                   drawnTile={
                     gameState.round?.drawnTile !== null && isMyTurn
                       ? gameState.round?.drawnTile
@@ -627,7 +632,6 @@ export function DemoGameScreen({ onBack }: DemoGameScreenProps) {
               )}
             </View>
 
-            {/* Timer - 20 seconds */}
             <AnimatedTimer
               remainingMs={turnTimerMs}
               totalMs={TURN_TIMEOUT_MS}
@@ -821,7 +825,6 @@ const styles = StyleSheet.create({
   // ====== TOP AREA ======
   topArea: {
     paddingTop: 6,
-    paddingHorizontal: 60,
     alignItems: "center",
   },
   topPlayerRow: {
@@ -848,11 +851,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
 
-  // Left player
-  leftPlayerArea: {
+  // Side players (left & right)
+  sidePlayerArea: {
     alignItems: "center",
     justifyContent: "center",
-    width: 60,
     gap: 6,
   },
   verticalHand: {
@@ -861,13 +863,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  // Right player
-  rightPlayerArea: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 60,
-    gap: 6,
-  },
 
   // Center table
   centerTable: {
@@ -886,7 +881,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sideDiscards: {
-    maxWidth: 100,
     alignItems: "center",
   },
   bottomDiscards: {

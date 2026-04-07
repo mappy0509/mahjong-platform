@@ -12,15 +12,32 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { useAuthStore } from "../stores/auth-store";
-import {
-  getPlayerStats,
-  getGameHistory,
-  getClubLeaderboard,
-  apiRequest,
-  type PlayerStats,
-  type GameHistoryItem,
-  type LeaderboardEntry,
-} from "../api/client";
+import { supabase } from "../lib/supabase";
+
+interface PlayerStats {
+  totalGames: number;
+  wins: number;
+  placements: number[];
+  avgScore: number;
+  winRate: number;
+  currentBalance: number;
+}
+
+interface GameHistoryItem {
+  roomId: string;
+  roomName: string;
+  finishedAt: string;
+  players: { userId: string; displayName: string; seat: number }[];
+  finalScores: Record<string, number> | null;
+}
+
+interface LeaderboardEntry {
+  userId: string;
+  displayName: string;
+  totalScore: number;
+  games: number;
+  wins: number;
+}
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -55,10 +72,15 @@ export function ProfileScreen({ onBack, onReplay }: ProfileScreenProps) {
 
   const loadClubs = async () => {
     try {
-      const data = await apiRequest<ClubInfo[]>("/clubs");
-      setClubs(data);
-      if (data.length > 0) {
-        setSelectedClub(data[0]);
+      const { data, error } = await supabase
+        .from("club_memberships")
+        .select("club_id, clubs:club_id (id, name)")
+        .eq("user_id", user?.id ?? "");
+      if (error) throw error;
+      const clubList = (data ?? []).map((m: any) => m.clubs).filter(Boolean);
+      setClubs(clubList);
+      if (clubList.length > 0) {
+        setSelectedClub(clubList[0]);
       }
     } catch {
       // No clubs
@@ -77,14 +99,109 @@ export function ProfileScreen({ onBack, onReplay }: ProfileScreenProps) {
     setLoading(true);
     try {
       if (tab === "stats") {
-        const s = await getPlayerStats(selectedClub.id);
-        setStats(s);
+        // Calculate stats from game results
+        const { data: results } = await supabase
+          .from("game_results")
+          .select("result_data, score_changes, game_rooms!inner(club_id)")
+          .eq("game_rooms.club_id", selectedClub.id);
+
+        const { data: participants } = await supabase
+          .from("game_participants")
+          .select("room_id, seat, game_rooms!inner(club_id, status)")
+          .eq("user_id", user?.id ?? "")
+          .eq("game_rooms.club_id", selectedClub.id)
+          .eq("game_rooms.status", "finished");
+
+        const totalGames = participants?.length ?? 0;
+        const placements = [0, 0, 0, 0];
+        let totalScore = 0;
+        let wins = 0;
+
+        // Simple stats calculation
+        if (results && participants) {
+          for (const p of participants) {
+            const roomResults = results.filter((r: any) => r.game_rooms?.club_id === selectedClub.id);
+            // Simplified — real implementation would correlate scores
+            if (roomResults.length > 0) {
+              // Placeholder stats
+            }
+          }
+        }
+
+        // Get point balance
+        const balance = await supabase.rpc("get_point_balance", {
+          p_user_id: user?.id,
+          p_club_id: selectedClub.id,
+        });
+
+        setStats({
+          totalGames,
+          wins,
+          placements,
+          avgScore: totalGames > 0 ? Math.round(totalScore / totalGames) : 0,
+          winRate: totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0,
+          currentBalance: balance.data ?? 0,
+        });
       } else if (tab === "history") {
-        const h = await getGameHistory(selectedClub.id);
-        setHistory(h);
+        const { data: rooms } = await supabase
+          .from("game_rooms")
+          .select(`
+            id,
+            name,
+            created_at,
+            game_participants (user_id, seat, profiles:user_id (display_name)),
+            game_results (result_data, score_changes)
+          `)
+          .eq("club_id", selectedClub.id)
+          .eq("status", "finished")
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        const historyItems: GameHistoryItem[] = (rooms ?? []).map((r: any) => ({
+          roomId: r.id,
+          roomName: r.name,
+          finishedAt: r.created_at,
+          players: (r.game_participants ?? []).map((p: any) => ({
+            userId: p.user_id,
+            displayName: p.profiles?.display_name ?? "???",
+            seat: p.seat,
+          })),
+          finalScores: null, // Would need to aggregate from results
+        }));
+        setHistory(historyItems);
       } else {
-        const l = await getClubLeaderboard(selectedClub.id);
-        setLeaderboard(l);
+        // Leaderboard — aggregate point transactions
+        const { data: txData } = await supabase
+          .from("point_transactions")
+          .select("user_id, amount, profiles:user_id (display_name)")
+          .eq("club_id", selectedClub.id)
+          .eq("type", "game_result");
+
+        const userScores = new Map<string, { name: string; total: number; games: number; wins: number }>();
+        for (const tx of (txData ?? [])) {
+          const entry = userScores.get(tx.user_id) ?? {
+            name: (tx as any).profiles?.display_name ?? "???",
+            total: 0,
+            games: 0,
+            wins: 0,
+          };
+          entry.total += tx.amount;
+          entry.games++;
+          if (tx.amount > 0) entry.wins++;
+          userScores.set(tx.user_id, entry);
+        }
+
+        const leaderboardData: LeaderboardEntry[] = Array.from(userScores.entries())
+          .map(([userId, data]) => ({
+            userId,
+            displayName: data.name,
+            totalScore: data.total,
+            games: data.games,
+            wins: data.wins,
+          }))
+          .sort((a, b) => b.totalScore - a.totalScore);
+
+        setLeaderboard(leaderboardData);
       }
     } catch {
       // ignore

@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import * as ScreenOrientation from "expo-screen-orientation";
 import type { TileId, SeatIndex, PlayerView, StampId } from "@mahjong/shared";
 import { ActionType, RoundPhase, RoundEndReason, TURN_TIMEOUT_MS } from "@mahjong/shared";
 import { useGameStore } from "../stores/game-store";
@@ -45,8 +44,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
     sendAction,
     sendStamp,
     lastStamp,
-    joinRoom,
-    initListeners,
+    subscribe,
     disconnect,
   } = useGameStore();
 
@@ -70,21 +68,14 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
   // Track previous view for state change detection
   const prevPlayersRef = useRef<PlayerView[] | null>(null);
 
-  // Lock to landscape and init sounds
+  // Initialize sounds on mount
   useEffect(() => {
-    ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE
-    ).catch(() => {});
     initSounds();
-    return () => {
-      ScreenOrientation.unlockAsync().catch(() => {});
-    };
   }, []);
 
-  // Initialize socket and join room
+  // Subscribe to realtime game updates
   useEffect(() => {
-    initListeners();
-    joinRoom(roomId);
+    subscribe(roomId);
 
     return () => {
       disconnect();

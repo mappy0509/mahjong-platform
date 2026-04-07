@@ -3,7 +3,7 @@
     "name": "麻雀",
     "slug": "mahjong-platform",
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "mahjong",
@@ -41,7 +41,7 @@
       [
         "expo-screen-orientation",
         {
-          "initialOrientation": "DEFAULT"
+          "initialOrientation": "LANDSCAPE"
         }
       ],
       [
