@@ -9,7 +9,7 @@
  * - 3 player rotation (% 3)
  */
 
-import type { TileId, TileKind, Meld } from "@mahjong/shared";
+import type { TileId, TileKind, Meld, PlayerGameView, PlayerView, SeatIndex } from "@mahjong/shared";
 import {
   Wind,
   RoundPhase,
@@ -42,7 +42,7 @@ const PLAYER_COUNT = 3;
 
 export interface SanmaGameAction {
   seat: SeatIndex3;
-  action: ActionType | "NUKIDORA";
+  action: ActionType;
   tileId?: TileId;
   tiles?: TileId[];
 }
@@ -110,16 +110,14 @@ export class SanmaGameMachine {
 
   /** Process a player action. */
   processAction(action: SanmaGameAction): SanmaGameEvent[] {
-    if (action.action === "NUKIDORA") {
-      return this.handleNukidora(action.seat, action.tileId!);
-    }
-
     const available = this.getAvailableActions(action.seat);
-    if (!available.includes(action.action as ActionType)) {
+    if (!available.includes(action.action)) {
       return [];
     }
 
     switch (action.action) {
+      case ActionType.NUKIDORA:
+        return this.handleNukidora(action.seat, action.tileId!);
       case ActionType.DISCARD:
         return this.handleDiscard(action.seat, action.tileId!);
       case ActionType.TSUMO:
@@ -144,11 +142,11 @@ export class SanmaGameMachine {
   }
 
   /** Get available actions for a player (no chi in sanma). */
-  getAvailableActions(seat: SeatIndex3): (ActionType | "NUKIDORA")[] {
+  getAvailableActions(seat: SeatIndex3): ActionType[] {
     const round = this.state.round;
     if (!round || this.state.gamePhase !== GamePhase.PLAYING) return [];
 
-    const actions: (ActionType | "NUKIDORA")[] = [];
+    const actions: ActionType[] = [];
     const hand = round.hands[seat];
     const handKinds = hand.map(tileKind);
 
@@ -165,7 +163,7 @@ export class SanmaGameMachine {
       // Nukidora check (can declare 北 as bonus dora)
       if (this.state.rules.hasNukidora && !round.riichi[seat]) {
         if (hand.some((t) => tileKind(t) === NORTH_WIND_KIND)) {
-          actions.push("NUKIDORA");
+          actions.push(ActionType.NUKIDORA);
         }
       }
 
@@ -324,6 +322,78 @@ export class SanmaGameMachine {
       this.state.gamePhase === GamePhase.FINISHED ||
       this.state.gamePhase === GamePhase.GAME_RESULT
     );
+  }
+
+  /**
+   * Generate a PlayerGameView (filtered view for a specific player).
+   * Reuses the 4p PlayerGameView shape: players array has 3 entries,
+   * mySeat / currentTurn use the SeatIndex (0-3) but only 0..2 are valid.
+   */
+  getPlayerView(seat: SeatIndex3, playerNames: string[]): PlayerGameView {
+    const round = this.state.round;
+
+    if (!round) {
+      return {
+        gamePhase: this.state.gamePhase,
+        roundPhase: RoundPhase.DRAW,
+        roundWind: this.state.roundWind,
+        roundNumber: this.state.roundNumber,
+        honba: this.state.honba,
+        riichiSticks: this.state.riichiSticks,
+        tilesRemaining: 0,
+        doraIndicators: [],
+        myHand: [],
+        mySeat: seat as SeatIndex,
+        myScore: this.state.scores[seat],
+        players: playerNames.map((name, i) => ({
+          seat: i as SeatIndex,
+          name,
+          score: this.state.scores[i] ?? 0,
+          discards: [],
+          melds: [],
+          isRiichi: false,
+          isConnected: true,
+          handCount: 0,
+        })),
+        currentTurn: 0 as SeatIndex,
+        availableActions: [],
+        seatWinds: [Wind.EAST, Wind.SOUTH, Wind.WEST],
+        dealerSeat: this.state.dealerSeat as SeatIndex,
+      };
+    }
+
+    const players: PlayerView[] = playerNames.map((name, i) => ({
+      seat: i as SeatIndex,
+      name,
+      score: this.state.scores[i] ?? 0,
+      discards: round.discards[i] ?? [],
+      melds: round.melds[i] ?? [],
+      isRiichi: round.riichi[i] ?? false,
+      isConnected: true,
+      handCount: round.hands[i]?.length ?? 0,
+    }));
+
+    return {
+      gamePhase: this.state.gamePhase,
+      roundPhase: round.phase,
+      roundWind: this.state.roundWind,
+      roundNumber: this.state.roundNumber,
+      honba: this.state.honba,
+      riichiSticks: this.state.riichiSticks,
+      tilesRemaining: tilesRemaining(round.wall),
+      doraIndicators: getDoraIndicators(round.wall),
+      myHand: sortTileIds(round.hands[seat]),
+      mySeat: seat as SeatIndex,
+      myScore: this.state.scores[seat],
+      players,
+      currentTurn: round.currentTurn as SeatIndex,
+      lastDiscard: round.lastDiscard
+        ? { seat: round.lastDiscard.seat as SeatIndex, tileId: round.lastDiscard.tileId }
+        : undefined,
+      availableActions: this.getAvailableActions(seat),
+      seatWinds: [Wind.EAST, Wind.SOUTH, Wind.WEST],
+      dealerSeat: this.state.dealerSeat as SeatIndex,
+    };
   }
 
   // ===== Private handlers =====

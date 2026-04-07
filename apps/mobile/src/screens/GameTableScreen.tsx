@@ -232,10 +232,12 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
     );
   }
 
+  const playerCount = view.players.length === 3 ? 3 : 4;
+  const isSanma = playerCount === 3;
   const mySeat = view.mySeat;
-  const rightIdx = ((mySeat + 1) % 4) as SeatIndex;
-  const topIdx = ((mySeat + 2) % 4) as SeatIndex;
-  const leftIdx = ((mySeat + 3) % 4) as SeatIndex;
+  const rightIdx = ((mySeat + 1) % playerCount) as SeatIndex;
+  const topIdx = (isSanma ? mySeat : ((mySeat + 2) % 4)) as SeatIndex;
+  const leftIdx = ((mySeat + (isSanma ? 2 : 3)) % playerCount) as SeatIndex;
 
   const isMyTurn =
     view.currentTurn === mySeat && view.roundPhase === RoundPhase.DISCARD;
@@ -244,7 +246,8 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
     isMyTurn || (isClaimPhase && view.availableActions.length > 0);
 
   // Dealer seat from view (server provides it directly)
-  const dealerSeat = (view.dealerSeat ?? ((view.roundNumber ?? 0) % 4)) as SeatIndex;
+  const dealerSeat = (view.dealerSeat ?? ((view.roundNumber ?? 0) % playerCount)) as SeatIndex;
+  const windChars = isSanma ? ["東", "南", "西"] : WIND_CHARS;
 
   // Build result data for modal from roundResult
   const resultWinners =
@@ -302,33 +305,35 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
           </View>
         )}
 
-        {/* ====== TOP PLAYER AREA ====== */}
-        <View style={styles.topArea}>
-          <View style={styles.topPlayerRow}>
-            <View style={styles.topTilesContainer}>
-              <View style={styles.topHandRow}>
-                {Array.from({ length: view.players[topIdx].handCount }).map(
-                  (_, i) => (
-                    <BackTile key={i} size="xs" />
-                  )
-                )}
+        {/* ====== TOP PLAYER AREA (4-player only) ====== */}
+        {!isSanma && (
+          <View style={styles.topArea}>
+            <View style={styles.topPlayerRow}>
+              <View style={styles.topTilesContainer}>
+                <View style={styles.topHandRow}>
+                  {Array.from({ length: view.players[topIdx].handCount }).map(
+                    (_, i) => (
+                      <BackTile key={i} size="xs" />
+                    )
+                  )}
+                </View>
+                <MeldView melds={view.players[topIdx].melds} size="xs" />
               </View>
-              <MeldView melds={view.players[topIdx].melds} size="xs" />
+              <PlayerPanel
+                name={view.players[topIdx].name}
+                score={view.players[topIdx].score}
+                wind={windChars[(topIdx - dealerSeat + playerCount) % playerCount]}
+                isDealer={topIdx === dealerSeat}
+                isCurrentTurn={view.currentTurn === topIdx}
+                isRiichi={view.players[topIdx].isRiichi}
+                isMe={false}
+                handCount={view.players[topIdx].handCount}
+                isConnected={view.players[topIdx].isConnected}
+                position="top"
+              />
             </View>
-            <PlayerPanel
-              name={view.players[topIdx].name}
-              score={view.players[topIdx].score}
-              wind={WIND_CHARS[(topIdx - dealerSeat + 4) % 4]}
-              isDealer={topIdx === dealerSeat}
-              isCurrentTurn={view.currentTurn === topIdx}
-              isRiichi={view.players[topIdx].isRiichi}
-              isMe={false}
-              handCount={view.players[topIdx].handCount}
-              isConnected={view.players[topIdx].isConnected}
-              position="top"
-            />
           </View>
-        </View>
+        )}
 
         {/* ====== MIDDLE SECTION ====== */}
         <View style={styles.middleArea}>
@@ -337,7 +342,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
             <PlayerPanel
               name={view.players[leftIdx].name}
               score={view.players[leftIdx].score}
-              wind={WIND_CHARS[(leftIdx - dealerSeat + 4) % 4]}
+              wind={windChars[(leftIdx - dealerSeat + playerCount) % playerCount]}
               isDealer={leftIdx === dealerSeat}
               isCurrentTurn={view.currentTurn === leftIdx}
               isRiichi={view.players[leftIdx].isRiichi}
@@ -357,9 +362,11 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
 
           {/* CENTER TABLE */}
           <View style={styles.centerTable}>
-            <View style={styles.topDiscards}>
-              <DiscardPile tiles={view.players[topIdx].discards} size="xs" />
-            </View>
+            {!isSanma && (
+              <View style={styles.topDiscards}>
+                <DiscardPile tiles={view.players[topIdx].discards} size="xs" />
+              </View>
+            )}
 
             <View style={styles.centerMiddleRow}>
               <View style={styles.sideDiscards}>
@@ -387,7 +394,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
             <PlayerPanel
               name={view.players[rightIdx].name}
               score={view.players[rightIdx].score}
-              wind={WIND_CHARS[(rightIdx - dealerSeat + 4) % 4]}
+              wind={windChars[(rightIdx - dealerSeat + playerCount) % playerCount]}
               isDealer={rightIdx === dealerSeat}
               isCurrentTurn={view.currentTurn === rightIdx}
               isRiichi={view.players[rightIdx].isRiichi}
@@ -416,7 +423,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
             <PlayerPanel
               name={view.players[mySeat].name}
               score={view.myScore}
-              wind={WIND_CHARS[(mySeat - dealerSeat + 4) % 4]}
+              wind={windChars[(mySeat - dealerSeat + playerCount) % playerCount]}
               isDealer={mySeat === dealerSeat}
               isCurrentTurn={view.currentTurn === mySeat}
               isRiichi={view.players[mySeat].isRiichi}

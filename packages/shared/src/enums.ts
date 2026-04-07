@@ -63,6 +63,8 @@ export enum ActionType {
   RON = "RON",
   SKIP = "SKIP",
   DRAW_TILE = "DRAW_TILE",
+  /** 3麻のみ: 北抜きドラ宣言 */
+  NUKIDORA = "NUKIDORA",
 }
 
 export enum MeldType {

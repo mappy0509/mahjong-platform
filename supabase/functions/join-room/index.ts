@@ -21,11 +21,13 @@ Deno.serve(async (req) => {
     // Check room exists and is waiting
     const { data: room } = await admin
       .from("game_rooms")
-      .select("id, club_id, status")
+      .select("id, club_id, status, rules")
       .eq("id", roomId)
       .single();
     if (!room) return errorResponse("Room not found", 404);
     if (room.status !== "waiting") return errorResponse("Room is not accepting players");
+
+    const playerCount = (room.rules?.playerCount === 3 ? 3 : 4) as 3 | 4;
 
     // Verify membership
     const { data: membership } = await admin
@@ -54,7 +56,7 @@ Deno.serve(async (req) => {
 
     const takenSeats = new Set((participants ?? []).map((p: { seat: number }) => p.seat));
     let nextSeat = -1;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < playerCount; i++) {
       if (!takenSeats.has(i)) {
         nextSeat = i;
         break;

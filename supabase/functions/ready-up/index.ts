@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, getSupabaseUser, corsHeaders, jsonResponse, errorResponse } from "../_shared/supabase-admin.ts";
-import { GameMachine } from "../_shared/engine.js";
+import { GameMachine, SanmaGameMachine } from "../_shared/engine.js";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,6 +19,15 @@ Deno.serve(async (req) => {
 
     const admin = getSupabaseAdmin();
 
+    // Look up room rules to determine player count
+    const { data: roomRow } = await admin
+      .from("game_rooms")
+      .select("rules")
+      .eq("id", roomId)
+      .single();
+    const requiredPlayers = (roomRow?.rules?.playerCount === 3 ? 3 : 4) as 3 | 4;
+    const isSanma = requiredPlayers === 3;
+
     // Mark this player as ready
     const { error: readyError } = await admin
       .from("game_participants")
@@ -27,14 +36,14 @@ Deno.serve(async (req) => {
       .eq("user_id", user.id);
     if (readyError) return errorResponse(readyError.message, 500);
 
-    // Check if all 4 players are ready
+    // Check if all required players are ready
     const { data: participants } = await admin
       .from("game_participants")
       .select("user_id, seat, is_ready")
       .eq("room_id", roomId)
       .order("seat");
 
-    if (!participants || participants.length < 4) {
+    if (!participants || participants.length < requiredPlayers) {
       return jsonResponse({ ready: true, allReady: false, playersReady: participants?.filter((p: any) => p.is_ready).length ?? 0 });
     }
 
@@ -54,12 +63,6 @@ Deno.serve(async (req) => {
     }
 
     // All ready — start the game!
-    const { data: room } = await admin
-      .from("game_rooms")
-      .select("rules")
-      .eq("id", roomId)
-      .single();
-
     // Get player display names
     const userIds = participants.map((p: any) => p.user_id);
     const { data: profiles } = await admin
@@ -73,10 +76,10 @@ Deno.serve(async (req) => {
       (p: any) => nameMap.get(p.user_id) ?? `Player ${p.seat + 1}`,
     );
 
-    // Create game machine and start game
-    const machine = new GameMachine();
+    // Create game machine and start game (sanma vs 4p)
+    const machine: any = isSanma ? new SanmaGameMachine() : new GameMachine();
     const seed = Date.now();
-    machine.startGame(seed, room?.rules ?? {});
+    machine.startGame(seed, roomRow?.rules ?? {});
 
     const state = machine.getState();
 

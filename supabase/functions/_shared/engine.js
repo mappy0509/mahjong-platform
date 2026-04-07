@@ -3058,14 +3058,13 @@ var SanmaGameMachine = class {
   }
   /** Process a player action. */
   processAction(action) {
-    if (action.action === "NUKIDORA") {
-      return this.handleNukidora(action.seat, action.tileId);
-    }
     const available = this.getAvailableActions(action.seat);
     if (!available.includes(action.action)) {
       return [];
     }
     switch (action.action) {
+      case "NUKIDORA" /* NUKIDORA */:
+        return this.handleNukidora(action.seat, action.tileId);
       case "DISCARD" /* DISCARD */:
         return this.handleDiscard(action.seat, action.tileId);
       case "TSUMO" /* TSUMO */:
@@ -3104,7 +3103,7 @@ var SanmaGameMachine = class {
       }
       if (this.state.rules.hasNukidora && !round.riichi[seat]) {
         if (hand.some((t) => tileKind(t) === NORTH_WIND_KIND)) {
-          actions.push("NUKIDORA");
+          actions.push("NUKIDORA" /* NUKIDORA */);
         }
       }
       if (!round.riichi[seat] && isMenzen2(round, seat) && this.state.scores[seat] >= 1e3) {
@@ -3212,6 +3211,72 @@ var SanmaGameMachine = class {
   }
   isGameOver() {
     return this.state.gamePhase === "FINISHED" /* FINISHED */ || this.state.gamePhase === "GAME_RESULT" /* GAME_RESULT */;
+  }
+  /**
+   * Generate a PlayerGameView (filtered view for a specific player).
+   * Reuses the 4p PlayerGameView shape: players array has 3 entries,
+   * mySeat / currentTurn use the SeatIndex (0-3) but only 0..2 are valid.
+   */
+  getPlayerView(seat, playerNames) {
+    const round = this.state.round;
+    if (!round) {
+      return {
+        gamePhase: this.state.gamePhase,
+        roundPhase: "DRAW" /* DRAW */,
+        roundWind: this.state.roundWind,
+        roundNumber: this.state.roundNumber,
+        honba: this.state.honba,
+        riichiSticks: this.state.riichiSticks,
+        tilesRemaining: 0,
+        doraIndicators: [],
+        myHand: [],
+        mySeat: seat,
+        myScore: this.state.scores[seat],
+        players: playerNames.map((name, i) => ({
+          seat: i,
+          name,
+          score: this.state.scores[i] ?? 0,
+          discards: [],
+          melds: [],
+          isRiichi: false,
+          isConnected: true,
+          handCount: 0
+        })),
+        currentTurn: 0,
+        availableActions: [],
+        seatWinds: [0 /* EAST */, 1 /* SOUTH */, 2 /* WEST */],
+        dealerSeat: this.state.dealerSeat
+      };
+    }
+    const players = playerNames.map((name, i) => ({
+      seat: i,
+      name,
+      score: this.state.scores[i] ?? 0,
+      discards: round.discards[i] ?? [],
+      melds: round.melds[i] ?? [],
+      isRiichi: round.riichi[i] ?? false,
+      isConnected: true,
+      handCount: round.hands[i]?.length ?? 0
+    }));
+    return {
+      gamePhase: this.state.gamePhase,
+      roundPhase: round.phase,
+      roundWind: this.state.roundWind,
+      roundNumber: this.state.roundNumber,
+      honba: this.state.honba,
+      riichiSticks: this.state.riichiSticks,
+      tilesRemaining: tilesRemaining(round.wall),
+      doraIndicators: getDoraIndicators(round.wall),
+      myHand: sortTileIds(round.hands[seat]),
+      mySeat: seat,
+      myScore: this.state.scores[seat],
+      players,
+      currentTurn: round.currentTurn,
+      lastDiscard: round.lastDiscard ? { seat: round.lastDiscard.seat, tileId: round.lastDiscard.tileId } : void 0,
+      availableActions: this.getAvailableActions(seat),
+      seatWinds: [0 /* EAST */, 1 /* SOUTH */, 2 /* WEST */],
+      dealerSeat: this.state.dealerSeat
+    };
   }
   // ===== Private handlers =====
   applyEvent(event) {

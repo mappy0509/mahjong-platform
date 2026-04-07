@@ -34,13 +34,16 @@ export interface Meld {
 // ===== Game Rule Settings =====
 
 export interface GameRuleConfig {
-  playerCount: 4;
+  playerCount: 3 | 4;
   roundType: "east" | "south"; // 東風 or 半荘
-  startPoints: number; // default 25000
+  startPoints: number; // default 25000 (4p), 35000 (3p)
   returnPoints: number; // default 30000 (オカ計算用)
-  uma: [number, number, number, number]; // e.g. [+30, +10, -10, -30]
+  /** 4要素 (4麻) または 3要素 (3麻). e.g. [+30, +10, -10, -30] / [+20, 0, -20] */
+  uma: number[];
   hasRedDora: boolean; // 赤ドラ有無
   hasOpenTanyao: boolean; // 喰いタンあり
+  /** 3麻のみ: 北抜きドラ */
+  hasNukidora?: boolean;
 }
 
 // ===== WebSocket Event Payloads =====

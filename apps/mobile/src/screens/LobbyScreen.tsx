@@ -25,7 +25,7 @@ interface LobbyScreenProps {
 type LobbyView =
   | { type: "clubs" }
   | { type: "rooms"; clubId: string; clubName: string }
-  | { type: "waiting"; roomId: string; roomName: string };
+  | { type: "waiting"; roomId: string; roomName: string; playerCount: 3 | 4 };
 
 export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const { user, logout } = useAuthStore();
@@ -36,6 +36,7 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const [inviteCode, setInviteCode] = useState("");
   const [newClubName, setNewClubName] = useState("");
   const [roomName, setRoomName] = useState("");
+  const [newRoomPlayerCount, setNewRoomPlayerCount] = useState<3 | 4>(4);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [roomInfo, setRoomInfo] = useState<any>(null);
@@ -213,11 +214,16 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
         body: {
           clubId: lobbyView.clubId,
           name: roomName.trim(),
+          playerCount: newRoomPlayerCount,
         },
       });
       if (error) throw error;
       setRoomName("");
-      enterWaitingRoom(data.room.id, data.room.name);
+      enterWaitingRoom(
+        data.room.id,
+        data.room.name,
+        data.room.rules?.playerCount === 3 ? 3 : 4,
+      );
     } catch {
       Alert.alert("エラー", "ルーム作成に失敗しました");
     }
@@ -226,16 +232,20 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const handleJoinRoom = async (room: any) => {
     try {
       await gameJoinRoom(room.id);
-      enterWaitingRoom(room.id, room.name);
+      enterWaitingRoom(
+        room.id,
+        room.name,
+        room.rules?.playerCount === 3 ? 3 : 4,
+      );
     } catch {
       Alert.alert("エラー", "ルーム参加に失敗しました");
     }
   };
 
-  const enterWaitingRoom = (roomId: string, name: string) => {
+  const enterWaitingRoom = (roomId: string, name: string, playerCount: 3 | 4) => {
     setIsReady(false);
     setRoomInfo(null);
-    setLobbyView({ type: "waiting", roomId, roomName: name });
+    setLobbyView({ type: "waiting", roomId, roomName: name, playerCount });
   };
 
   const handleReady = async () => {
@@ -393,6 +403,40 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
             <Text style={styles.actionBtnText}>作成</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.modeRow}>
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              newRoomPlayerCount === 4 && styles.modeBtnActive,
+            ]}
+            onPress={() => setNewRoomPlayerCount(4)}
+          >
+            <Text
+              style={[
+                styles.modeBtnText,
+                newRoomPlayerCount === 4 && styles.modeBtnTextActive,
+              ]}
+            >
+              四人麻雀
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              newRoomPlayerCount === 3 && styles.modeBtnActive,
+            ]}
+            onPress={() => setNewRoomPlayerCount(3)}
+          >
+            <Text
+              style={[
+                styles.modeBtnText,
+                newRoomPlayerCount === 3 && styles.modeBtnTextActive,
+              ]}
+            >
+              三人麻雀
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.sectionTitle}>ルーム一覧</Text>
 
@@ -422,7 +466,9 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
                 <View style={styles.listItemContent}>
                   <Text style={styles.listItemTitle}>{item.name}</Text>
                   <Text style={styles.listItemSub}>
-                    {item.participants?.length ?? 0}/4人
+                    {item.participants?.length ?? 0}/{item.rules?.playerCount === 3 ? 3 : 4}人
+                    {" ・ "}
+                    {item.rules?.playerCount === 3 ? "三麻" : "四麻"}
                     {item.status === "playing" ? " ・ 対局中" : " ・ 待機中"}
                   </Text>
                 </View>
@@ -447,16 +493,21 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   }
 
   function renderWaitingRoom() {
+    if (lobbyView.type !== "waiting") return null;
     const participants = roomInfo?.participants ?? [];
-    const playerCount = participants.length;
+    const filled = participants.length;
+    const required = lobbyView.playerCount;
+    const seatList = required === 3 ? [0, 1, 2] : [0, 1, 2, 3];
 
     return (
       <View style={styles.waitingContainer}>
-        <Text style={styles.waitingTitle}>対局待ち</Text>
-        <Text style={styles.waitingCount}>{playerCount} / 4</Text>
+        <Text style={styles.waitingTitle}>
+          対局待ち ({required === 3 ? "三麻" : "四麻"})
+        </Text>
+        <Text style={styles.waitingCount}>{filled} / {required}</Text>
 
         <View style={styles.seatGrid}>
-          {[0, 1, 2, 3].map((seatIdx) => {
+          {seatList.map((seatIdx) => {
             const p = participants.find((pp: any) => pp.seat === seatIdx);
             return (
               <View
@@ -542,6 +593,22 @@ const styles = StyleSheet.create({
   logoutText: { color: "#ff6b6b", fontSize: 12, marginTop: 2 },
   content: { flex: 1, padding: 16 },
   inputRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  modeRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(26, 120, 136, 0.25)",
+    backgroundColor: "rgba(10, 22, 40, 0.6)",
+    alignItems: "center",
+  },
+  modeBtnActive: {
+    borderColor: "#20a0b0",
+    backgroundColor: "rgba(26, 120, 136, 0.25)",
+  },
+  modeBtnText: { color: "#6a8fa0", fontWeight: "bold", fontSize: 14 },
+  modeBtnTextActive: { color: "#e0f0f5" },
   input: {
     flex: 1,
     backgroundColor: "rgba(10, 22, 40, 0.8)",

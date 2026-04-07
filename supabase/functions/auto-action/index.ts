@@ -1,7 +1,11 @@
 import { getSupabaseAdmin, corsHeaders, jsonResponse, errorResponse } from "../_shared/supabase-admin.ts";
-import { GameMachine } from "../_shared/engine.js";
+import { GameMachine, SanmaGameMachine } from "../_shared/engine.js";
 
 const TURN_TIMEOUT_MS = 60_000;
+
+function isSanmaState(state: any): boolean {
+  return Array.isArray(state?.scores) && state.scores.length === 3;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -35,7 +39,10 @@ Deno.serve(async (req) => {
         // Strip pending advance metadata before passing to engine
         const rawState = session.state ?? {};
         const { _pendingAdvance: _ignored, ...gameState } = rawState as Record<string, unknown>;
-        const machine = new GameMachine(gameState);
+        const sanma = isSanmaState(gameState);
+        const machine: any = sanma
+          ? new SanmaGameMachine(gameState)
+          : new GameMachine(gameState);
         const state = machine.getState();
 
         if (state.gamePhase !== "PLAYING") continue;

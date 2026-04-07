@@ -1,8 +1,12 @@
 import { getSupabaseAdmin, getSupabaseUser, corsHeaders, jsonResponse, errorResponse } from "../_shared/supabase-admin.ts";
-import { GameMachine } from "../_shared/engine.js";
+import { GameMachine, SanmaGameMachine } from "../_shared/engine.js";
 
 // Special action handled outside the engine: advance from ROUND_RESULT to next round
 const NEXT_ROUND = "NEXT_ROUND";
+
+function isSanmaState(state: any): boolean {
+  return Array.isArray(state?.scores) && state.scores.length === 3;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -43,7 +47,9 @@ Deno.serve(async (req) => {
     const rawState = (session.state ?? {}) as Record<string, unknown>;
     const { _pendingAdvance, ...gameState } = rawState as { _pendingAdvance?: { dealerWon: boolean; isDraw: boolean } };
 
-    const machine = new GameMachine(gameState);
+    const sanma = isSanmaState(gameState);
+    const playerCount = sanma ? 3 : 4;
+    const machine: any = sanma ? new SanmaGameMachine(gameState) : new GameMachine(gameState);
 
     let events: any[] = [];
 
@@ -54,7 +60,10 @@ Deno.serve(async (req) => {
         // Nothing to advance — return current state
         return jsonResponse({ success: true, events: [], skipped: true });
       }
-      events = machine.advanceToNextRound(meta.dealerWon, meta.isDraw);
+      // Sanma's advanceToNextRound only takes dealerWon (no isDraw param)
+      events = sanma
+        ? machine.advanceToNextRound(meta.dealerWon)
+        : machine.advanceToNextRound(meta.dealerWon, meta.isDraw);
       if (events.length === 0) {
         return errorResponse("Cannot advance round in current state", 400);
       }
@@ -137,11 +146,13 @@ Deno.serve(async (req) => {
         totalPoints: 0,
       }));
       // Apply uma based on rules
-      const uma = newState.rules?.uma ?? [30, 10, -10, -30];
+      const defaultUma = sanma ? [20, 0, -20] : [30, 10, -10, -30];
+      const startPoints = sanma ? 35000 : 25000;
+      const uma = newState.rules?.uma ?? defaultUma;
       const sorted = [...rankings].sort((a: any, b: any) => b.finalScore - a.finalScore);
       sorted.forEach((r: any, i: number) => {
         r.umaScore = uma[i] ?? 0;
-        r.totalPoints = Math.round((r.finalScore - 25000) / 1000) + r.umaScore;
+        r.totalPoints = Math.round((r.finalScore - startPoints) / 1000) + r.umaScore;
       });
       finalResult = { rankings: sorted };
     }

@@ -72,13 +72,25 @@ export function haversineDistanceKm(
   return R * c;
 }
 
-// Default rules
+// Default rules — 4p
 export const DEFAULT_RULES = {
-  playerCount: 4 as const,
+  playerCount: 4 as 3 | 4,
   roundType: "south" as const,
   startPoints: INITIAL_POINTS,
   returnPoints: RETURN_POINTS,
-  uma: [30, 10, -10, -30] as [number, number, number, number],
+  uma: [30, 10, -10, -30] as number[],
   hasRedDora: true,
   hasOpenTanyao: true,
+};
+
+// Default rules — 3p (sanma)
+export const SANMA_DEFAULT_RULES = {
+  playerCount: 3 as 3 | 4,
+  roundType: "south" as const,
+  startPoints: 35000,
+  returnPoints: 40000,
+  uma: [20, 0, -20] as number[],
+  hasRedDora: true,
+  hasOpenTanyao: true,
+  hasNukidora: true,
 };
