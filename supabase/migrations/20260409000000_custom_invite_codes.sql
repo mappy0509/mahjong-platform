@@ -34,7 +34,7 @@ begin
       raise exception '招待コードには英数字・ハイフン・アンダースコアのみ使用できます';
     end if;
 
-    if exists (select 1 from public.clubs where invite_code = normalized_code) then
+    if exists (select 1 from public.clubs c where c.invite_code = normalized_code) then
       raise exception 'この招待コードはすでに使われています';
     end if;
 
@@ -92,7 +92,7 @@ begin
     raise exception '招待コードには英数字・ハイフン・アンダースコアのみ使用できます';
   end if;
 
-  if exists (select 1 from public.clubs where invite_code = normalized_code and id <> p_club_id) then
+  if exists (select 1 from public.clubs c where c.invite_code = normalized_code and c.id <> p_club_id) then
     raise exception 'この招待コードはすでに使われています';
   end if;
 
