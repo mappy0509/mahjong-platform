@@ -12,10 +12,14 @@ import {
   Animated,
   Easing,
   Pressable,
+  Modal,
+  Platform,
+  Share,
   useWindowDimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
+import * as Clipboard from "expo-clipboard";
 import { useAuthStore } from "../stores/auth-store";
 import { supabase } from "../lib/supabase";
 
@@ -62,8 +66,13 @@ export function HomeScreen({
   const [clubsLoading, setClubsLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [newClubName, setNewClubName] = useState("");
+  const [newClubInviteCode, setNewClubInviteCode] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+
+  // Invite share modal
+  const [shareTarget, setShareTarget] = useState<ClubPreview | null>(null);
+  const [copiedFlash, setCopiedFlash] = useState(false);
 
   // Floating tile animation
   const float1 = useRef(new Animated.Value(0)).current;
@@ -167,19 +176,63 @@ export function HomeScreen({
   const handleCreateClub = async () => {
     if (!newClubName.trim()) return;
     try {
-      const { error } = await supabase.rpc("create_club", {
+      const { data, error } = await supabase.rpc("create_club", {
         p_name: newClubName.trim(),
         p_description: null,
+        p_invite_code: newClubInviteCode.trim() || null,
       });
       if (error) {
-        Alert.alert("エラー", error.message ?? "クラブ作成に失敗しました");
+        Alert.alert("クラブ作成エラー", error.message ?? "クラブ作成に失敗しました");
         return;
       }
       setNewClubName("");
+      setNewClubInviteCode("");
       setShowCreate(false);
-      loadClubs();
+      await loadClubs();
+      // Open share modal so the owner immediately sees the invite code
+      const created = (data as any[])?.[0];
+      if (created) {
+        setShareTarget({
+          id: created.id,
+          name: created.name,
+          invite_code: created.invite_code,
+          description: created.description ?? null,
+        });
+      }
     } catch {
       Alert.alert("エラー", "クラブ作成に失敗しました");
+    }
+  };
+
+  const handleCopyCode = async (code: string) => {
+    try {
+      await Clipboard.setStringAsync(code);
+      setCopiedFlash(true);
+      setTimeout(() => setCopiedFlash(false), 1600);
+    } catch {
+      Alert.alert("コピーできませんでした", code);
+    }
+  };
+
+  const handleShareInvite = async (club: ClubPreview) => {
+    const message = `麻雀プラットフォームの「${club.name}」に招待します。\n\n招待コード: ${club.invite_code}\n\nアプリを開いて、トップ画面の「招待コードで参加」にこのコードを入力してください。\nhttps://mahjong-platform.vercel.app`;
+    if (Platform.OS === "web") {
+      const navAny = (globalThis as any).navigator;
+      if (navAny?.share) {
+        try {
+          await navAny.share({ title: `${club.name}に招待`, text: message });
+          return;
+        } catch {
+          // User cancelled or unsupported — fall through to copy
+        }
+      }
+      handleCopyCode(message);
+      return;
+    }
+    try {
+      await Share.share({ message });
+    } catch {
+      handleCopyCode(message);
     }
   };
 
@@ -489,9 +542,29 @@ export function HomeScreen({
                   <Text style={styles.emptyClubText}>
                     まだクラブに参加していません
                   </Text>
-                  <Text style={styles.emptyClubHint}>
-                    クラブを作成するか、招待コードで参加しましょう
-                  </Text>
+                  <View style={styles.howtoSteps}>
+                    <View style={styles.howtoRow}>
+                      <Text style={styles.howtoBadge}>1</Text>
+                      <Text style={styles.howtoText}>
+                        <Text style={styles.howtoBold}>クラブを作成</Text>
+                        するか、友達から
+                        <Text style={styles.howtoBold}>招待コード</Text>
+                        を受け取る
+                      </Text>
+                    </View>
+                    <View style={styles.howtoRow}>
+                      <Text style={styles.howtoBadge}>2</Text>
+                      <Text style={styles.howtoText}>
+                        作ったクラブの招待コードを友達にシェア
+                      </Text>
+                    </View>
+                    <View style={styles.howtoRow}>
+                      <Text style={styles.howtoBadge}>3</Text>
+                      <Text style={styles.howtoText}>
+                        全員揃ったらルームを作って対局開始
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               ) : (
                 <ScrollView
@@ -500,31 +573,59 @@ export function HomeScreen({
                   contentContainerStyle={styles.clubScroll}
                 >
                   {clubs.map((club) => (
-                    <Pressable
-                      key={club.id}
-                      onPress={onJoinClubAndOpenLobby}
-                      style={({ pressed }) => [
-                        styles.clubCard,
-                        pressed && styles.clubCardPressed,
-                      ]}
-                    >
+                    <View key={club.id} style={styles.clubCard}>
                       <LinearGradient
-                        colors={["rgba(26,120,136,0.45)", "rgba(10,30,55,0.85)"] as const}
+                        colors={["rgba(26,120,136,0.45)", "rgba(10,30,55,0.9)"] as const}
                         style={styles.clubCardGradient}
                       >
-                        <View style={styles.clubAvatar}>
-                          <Text style={styles.clubAvatarText}>
-                            {club.name.charAt(0)}
+                        <View style={styles.clubCardHeader}>
+                          <View style={styles.clubAvatar}>
+                            <Text style={styles.clubAvatarText}>
+                              {club.name.charAt(0)}
+                            </Text>
+                          </View>
+                          <Text style={styles.clubName} numberOfLines={1}>
+                            {club.name}
                           </Text>
                         </View>
-                        <Text style={styles.clubName} numberOfLines={1}>
-                          {club.name}
-                        </Text>
-                        <Text style={styles.clubInvite}>
-                          招待: {club.invite_code}
-                        </Text>
+
+                        <Pressable
+                          onPress={() => handleCopyCode(club.invite_code)}
+                          style={({ pressed }) => [
+                            styles.inviteChip,
+                            pressed && styles.inviteChipPressed,
+                          ]}
+                        >
+                          <Text style={styles.inviteChipLabel}>招待コード</Text>
+                          <Text style={styles.inviteChipCode} numberOfLines={1}>
+                            {club.invite_code}
+                          </Text>
+                          <Text style={styles.inviteChipHint}>タップでコピー</Text>
+                        </Pressable>
+
+                        <View style={styles.clubCardActions}>
+                          <Pressable
+                            onPress={() => setShareTarget(club)}
+                            style={({ pressed }) => [
+                              styles.clubMiniBtn,
+                              styles.clubMiniBtnGold,
+                              pressed && styles.clubMiniBtnPressed,
+                            ]}
+                          >
+                            <Text style={styles.clubMiniBtnGoldText}>招待</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={onJoinClubAndOpenLobby}
+                            style={({ pressed }) => [
+                              styles.clubMiniBtn,
+                              pressed && styles.clubMiniBtnPressed,
+                            ]}
+                          >
+                            <Text style={styles.clubMiniBtnText}>対局へ</Text>
+                          </Pressable>
+                        </View>
                       </LinearGradient>
-                    </Pressable>
+                    </View>
                   ))}
                 </ScrollView>
               )}
@@ -562,22 +663,38 @@ export function HomeScreen({
               </View>
 
               {showCreate && (
-                <View style={styles.inlineForm}>
+                <View style={styles.createBox}>
+                  <Text style={styles.createBoxLabel}>クラブ名</Text>
                   <TextInput
                     style={styles.inlineInput}
-                    placeholder="クラブ名"
+                    placeholder="例: 仲間内麻雀"
                     placeholderTextColor="#4a6070"
                     value={newClubName}
                     onChangeText={setNewClubName}
+                  />
+                  <Text style={styles.createBoxLabel}>
+                    招待コード <Text style={styles.createBoxLabelHint}>(任意・4〜20文字 / 英数字・- _)</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.inlineInput}
+                    placeholder="未入力ならランダム生成"
+                    placeholderTextColor="#4a6070"
+                    value={newClubInviteCode}
+                    onChangeText={(t) =>
+                      setNewClubInviteCode(t.toLowerCase().replace(/[^a-z0-9_-]/g, ""))
+                    }
+                    autoCapitalize="none"
+                    maxLength={20}
                   />
                   <Pressable
                     onPress={handleCreateClub}
                     style={({ pressed }) => [
                       styles.inlineSubmit,
+                      styles.inlineSubmitFull,
                       pressed && styles.inlineSubmitPressed,
                     ]}
                   >
-                    <Text style={styles.inlineSubmitText}>作成</Text>
+                    <Text style={styles.inlineSubmitText}>クラブを作成</Text>
                   </Pressable>
                 </View>
               )}
@@ -605,6 +722,87 @@ export function HomeScreen({
               )}
             </View>
           )}
+
+          {/* ===== Invite share modal ===== */}
+          <Modal
+            visible={!!shareTarget}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShareTarget(null)}
+          >
+            <Pressable
+              style={styles.modalBackdrop}
+              onPress={() => setShareTarget(null)}
+            >
+              <Pressable
+                style={styles.modalCard}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <LinearGradient
+                  colors={["#0e2034", "#0a1628"] as const}
+                  style={styles.modalCardInner}
+                >
+                  <Text style={styles.modalTitle}>友達を招待する</Text>
+                  <Text style={styles.modalClubName}>
+                    {shareTarget?.name}
+                  </Text>
+
+                  <View style={styles.modalCodeBox}>
+                    <Text style={styles.modalCodeLabel}>招待コード</Text>
+                    <Text style={styles.modalCode} selectable>
+                      {shareTarget?.invite_code}
+                    </Text>
+                  </View>
+
+                  <View style={styles.modalSteps}>
+                    <Text style={styles.modalStep}>
+                      1. このコードを友達に伝える
+                    </Text>
+                    <Text style={styles.modalStep}>
+                      2. 友達はトップ画面の「招待コードで参加」にコードを入力
+                    </Text>
+                    <Text style={styles.modalStep}>
+                      3. 全員参加したらルームを作って対局開始！
+                    </Text>
+                  </View>
+
+                  <View style={styles.modalActions}>
+                    <Pressable
+                      onPress={() =>
+                        shareTarget && handleCopyCode(shareTarget.invite_code)
+                      }
+                      style={({ pressed }) => [
+                        styles.modalBtn,
+                        styles.modalBtnSecondary,
+                        pressed && styles.modalBtnPressed,
+                      ]}
+                    >
+                      <Text style={styles.modalBtnSecondaryText}>
+                        {copiedFlash ? "✓ コピー完了" : "コードをコピー"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => shareTarget && handleShareInvite(shareTarget)}
+                      style={({ pressed }) => [
+                        styles.modalBtn,
+                        styles.modalBtnPrimary,
+                        pressed && styles.modalBtnPressed,
+                      ]}
+                    >
+                      <Text style={styles.modalBtnPrimaryText}>シェア</Text>
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    onPress={() => setShareTarget(null)}
+                    style={styles.modalCloseBtn}
+                  >
+                    <Text style={styles.modalCloseText}>閉じる</Text>
+                  </Pressable>
+                </LinearGradient>
+              </Pressable>
+            </Pressable>
+          </Modal>
 
           {/* Footer */}
           <View style={styles.footer}>
@@ -874,29 +1072,50 @@ const styles = StyleSheet.create({
   },
   sectionCount: { color: "#6a8fa0", fontSize: 12 },
   emptyClubBox: {
-    alignItems: "center",
-    paddingVertical: 28,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
     backgroundColor: "rgba(8,22,42,0.6)",
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(26,120,136,0.2)",
     borderStyle: "dashed" as any,
+    alignItems: "center",
   },
-  emptyClubIcon: { fontSize: 36, marginBottom: 8 },
-  emptyClubText: { color: "#9ab7c4", fontSize: 14, fontWeight: "700" },
-  emptyClubHint: { color: "#5e7e8e", fontSize: 11, marginTop: 4 },
-  clubScroll: { gap: 10, paddingVertical: 4, paddingHorizontal: 2 },
+  emptyClubIcon: { fontSize: 36, marginBottom: 6 },
+  emptyClubText: { color: "#9ab7c4", fontSize: 14, fontWeight: "700", marginBottom: 14 },
+  howtoSteps: { width: "100%", gap: 8 },
+  howtoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  howtoBadge: {
+    width: 22,
+    height: 22,
+    lineHeight: 22,
+    textAlign: "center",
+    borderRadius: 11,
+    backgroundColor: "rgba(255,213,74,0.18)",
+    color: GOLD,
+    fontSize: 12,
+    fontWeight: "900",
+    overflow: "hidden",
+  },
+  howtoText: { color: "#9ab7c4", fontSize: 12, flex: 1, lineHeight: 18 },
+  howtoBold: { color: "#e0f0f5", fontWeight: "800" },
+
+  clubScroll: { gap: 12, paddingVertical: 4, paddingHorizontal: 2 },
   clubCard: {
-    width: 160,
+    width: 220,
     borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,213,74,0.18)",
+    borderColor: "rgba(255,213,74,0.22)",
   },
-  clubCardPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
   clubCardGradient: {
     padding: 14,
-    minHeight: 110,
+    gap: 10,
+  },
+  clubCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   clubAvatar: {
     width: 38,
@@ -905,13 +1124,53 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,213,74,0.2)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
     borderWidth: 1,
     borderColor: "rgba(255,213,74,0.4)",
   },
   clubAvatarText: { color: GOLD, fontSize: 16, fontWeight: "900" },
-  clubName: { color: "#e0f0f5", fontSize: 14, fontWeight: "800" },
-  clubInvite: { color: "#6a8fa0", fontSize: 10, marginTop: 4 },
+  clubName: { color: "#e0f0f5", fontSize: 15, fontWeight: "800", flex: 1 },
+
+  inviteChip: {
+    backgroundColor: "rgba(255,213,74,0.08)",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,213,74,0.3)",
+  },
+  inviteChipPressed: { backgroundColor: "rgba(255,213,74,0.18)" },
+  inviteChipLabel: {
+    color: "#9ab7c4",
+    fontSize: 9,
+    letterSpacing: 1,
+    fontWeight: "700",
+  },
+  inviteChipCode: {
+    color: GOLD,
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 1,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  inviteChipHint: { color: "#6a8fa0", fontSize: 9, marginTop: 1 },
+
+  clubCardActions: { flexDirection: "row", gap: 8 },
+  clubMiniBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(14,30,52,0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(26,120,136,0.45)",
+    alignItems: "center",
+  },
+  clubMiniBtnGold: {
+    backgroundColor: "rgba(255,213,74,0.18)",
+    borderColor: "rgba(255,213,74,0.5)",
+  },
+  clubMiniBtnPressed: { opacity: 0.8 },
+  clubMiniBtnText: { color: "#e0f0f5", fontSize: 12, fontWeight: "800" },
+  clubMiniBtnGoldText: { color: GOLD, fontSize: 12, fontWeight: "900" },
 
   quickActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   quickAction: {
@@ -951,8 +1210,112 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     justifyContent: "center",
   },
+  inlineSubmitFull: {
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
   inlineSubmitPressed: { opacity: 0.85 },
   inlineSubmitText: { color: "#1a0f00", fontSize: 14, fontWeight: "900" },
+
+  // Create club box (expanded form)
+  createBox: {
+    marginTop: 10,
+    padding: 14,
+    backgroundColor: "rgba(8,22,42,0.85)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(26,120,136,0.35)",
+    gap: 6,
+  },
+  createBoxLabel: {
+    color: "#9ab7c4",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  createBoxLabelHint: { color: "#5e7e8e", fontSize: 10, fontWeight: "500" },
+
+  // Invite share modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,213,74,0.4)",
+  },
+  modalCardInner: { padding: 22 },
+  modalTitle: {
+    color: GOLD,
+    fontSize: 20,
+    fontWeight: "900",
+    textAlign: "center",
+    letterSpacing: 1,
+  },
+  modalClubName: {
+    color: "#e0f0f5",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 18,
+  },
+  modalCodeBox: {
+    backgroundColor: "rgba(255,213,74,0.12)",
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,213,74,0.4)",
+    alignItems: "center",
+  },
+  modalCodeLabel: {
+    color: "#c9b46a",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 2,
+  },
+  modalCode: {
+    color: GOLD,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: 3,
+    marginTop: 6,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  modalSteps: { marginTop: 18, gap: 6 },
+  modalStep: { color: "#9ab7c4", fontSize: 12, lineHeight: 18 },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 20,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 11,
+    alignItems: "center",
+  },
+  modalBtnPrimary: {
+    backgroundColor: GOLD,
+  },
+  modalBtnSecondary: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,213,74,0.4)",
+  },
+  modalBtnPressed: { opacity: 0.85 },
+  modalBtnPrimaryText: { color: "#1a0f00", fontSize: 14, fontWeight: "900" },
+  modalBtnSecondaryText: { color: GOLD, fontSize: 14, fontWeight: "800" },
+  modalCloseBtn: { paddingTop: 14, alignItems: "center" },
+  modalCloseText: { color: "#5e7e8e", fontSize: 12 },
 
   // Footer
   footer: {

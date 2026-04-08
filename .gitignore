@@ -17,3 +17,4 @@ redis-stable.tar.gz
 
 # Temp files
 lsof_output.txt
+.vercel
