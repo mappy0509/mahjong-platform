@@ -36,6 +36,15 @@ export interface GameLayout {
   centerInfoMinSize: number;
 }
 
+/** Min vertical space (px) needed to comfortably show a tile of each size,
+ * including the player panel row, melds, action buttons, etc. */
+const TILE_VERTICAL_BUDGET: Record<TileSize, number> = {
+  xs: 230,
+  sm: 280,
+  md: 340,
+  lg: 420,
+};
+
 function compute(w: number, h: number): GameLayout {
   const isLandscape = w > h;
 
@@ -48,32 +57,48 @@ function compute(w: number, h: number): GameLayout {
     const drawnGap = 8;
     const slotBudget = (handAvailable - drawnGap) / 15;
 
-    let handTileSize: TileSize;
-    if (slotBudget >= TILE_SLOT.lg) handTileSize = "lg";
-    else if (slotBudget >= TILE_SLOT.md) handTileSize = "md";
-    else if (slotBudget >= TILE_SLOT.sm) handTileSize = "sm";
-    else handTileSize = "xs";
+    // Pick the largest size that fits BOTH the horizontal slot budget AND
+    // the vertical screen budget. Phones in landscape are very short
+    // (~320–400px), so the vertical check is what saves them from
+    // unreadable cramped layouts.
+    const candidates: TileSize[] = ["lg", "md", "sm", "xs"];
+    let handTileSize: TileSize = "xs";
+    for (const c of candidates) {
+      if (slotBudget >= TILE_SLOT[c] && h >= TILE_VERTICAL_BUDGET[c]) {
+        handTileSize = c;
+        break;
+      }
+    }
 
-    // Side player width scales with screen
-    const sidePlayerWidth = Math.max(40, Math.min(60, Math.floor(w * 0.07)));
+    // Side player width scales with screen — narrower on phones
+    const sidePlayerWidth =
+      h < 400 ? 44 : Math.max(46, Math.min(60, Math.floor(w * 0.07)));
 
     // Side discard max width
-    const sideDiscardMaxWidth = Math.max(60, Math.min(110, Math.floor(w * 0.13)));
+    const sideDiscardMaxWidth =
+      h < 400
+        ? Math.max(54, Math.min(80, Math.floor(w * 0.1)))
+        : Math.max(60, Math.min(110, Math.floor(w * 0.13)));
 
     // Top area padding
     const topAreaPaddingH = sidePlayerWidth + 4;
 
-    // Center info min size scales slightly
-    const centerInfoMinSize = Math.max(110, Math.min(150, Math.floor(w * 0.17)));
+    // Center info min size scales slightly — smaller on phones
+    const centerInfoMinSize =
+      h < 400
+        ? Math.max(86, Math.min(120, Math.floor(w * 0.13)))
+        : Math.max(110, Math.min(150, Math.floor(w * 0.17)));
 
-    // Opponent tile size: xs on small, sm on larger
-    const opponentTileSize: TileSize = w >= 800 ? "sm" : "xs";
+    // Opponent tile size: xs on small/short, sm on larger
+    const opponentTileSize: TileSize = w >= 900 && h >= 500 ? "sm" : "xs";
 
     // Meld tile size based on hand tile
     const meldTileSize: TileSize =
-      handTileSize === "lg" ? "md" :
-      handTileSize === "md" ? "sm" :
-      handTileSize === "sm" ? "xs" : "xs";
+      handTileSize === "lg"
+        ? "md"
+        : handTileSize === "md"
+          ? "sm"
+          : "xs";
 
     return {
       screenW: w,

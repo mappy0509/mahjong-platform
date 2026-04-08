@@ -26,6 +26,7 @@ import {
 import { playSound, initSounds } from "../utils/sound-manager";
 import { StampPicker } from "../components/game/StampPicker";
 import { StampDisplay, type StampDisplayRef } from "../components/game/StampDisplay";
+import { useGameLayout } from "../hooks/useGameLayout";
 
 const WIND_CHARS = ["東", "南", "西", "北"];
 
@@ -35,6 +36,7 @@ interface GameTableScreenProps {
 }
 
 export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
+  const layout = useGameLayout();
   const {
     view,
     roundResult,
@@ -307,17 +309,17 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
 
         {/* ====== TOP PLAYER AREA (4-player only) ====== */}
         {!isSanma && (
-          <View style={styles.topArea}>
+          <View style={[styles.topArea, { paddingHorizontal: layout.topAreaPaddingH }]}>
             <View style={styles.topPlayerRow}>
               <View style={styles.topTilesContainer}>
                 <View style={styles.topHandRow}>
                   {Array.from({ length: view.players[topIdx].handCount }).map(
                     (_, i) => (
-                      <BackTile key={i} size="xs" />
+                      <BackTile key={i} size={layout.opponentTileSize} />
                     )
                   )}
                 </View>
-                <MeldView melds={view.players[topIdx].melds} size="xs" />
+                <MeldView melds={view.players[topIdx].melds} size={layout.opponentTileSize} />
               </View>
               <PlayerPanel
                 name={view.players[topIdx].name}
@@ -338,7 +340,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
         {/* ====== MIDDLE SECTION ====== */}
         <View style={styles.middleArea}>
           {/* LEFT PLAYER */}
-          <View style={styles.leftPlayerArea}>
+          <View style={[styles.leftPlayerArea, { width: layout.sidePlayerWidth }]}>
             <PlayerPanel
               name={view.players[leftIdx].name}
               score={view.players[leftIdx].score}
@@ -354,7 +356,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
             <View style={styles.verticalHand}>
               {Array.from({ length: view.players[leftIdx].handCount }).map(
                 (_, i) => (
-                  <BackTile key={i} size="xs" />
+                  <BackTile key={i} size={layout.opponentTileSize} />
                 )
               )}
             </View>
@@ -364,33 +366,33 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
           <View style={styles.centerTable}>
             {!isSanma && (
               <View style={styles.topDiscards}>
-                <DiscardPile tiles={view.players[topIdx].discards} size="xs" />
+                <DiscardPile tiles={view.players[topIdx].discards} size={layout.opponentTileSize} />
               </View>
             )}
 
             <View style={styles.centerMiddleRow}>
-              <View style={styles.sideDiscards}>
-                <DiscardPile tiles={view.players[leftIdx].discards} size="xs" />
+              <View style={[styles.sideDiscards, { maxWidth: layout.sideDiscardMaxWidth }]}>
+                <DiscardPile tiles={view.players[leftIdx].discards} size={layout.opponentTileSize} />
               </View>
 
-              <GameInfo view={view} dealerSeat={dealerSeat} />
+              <GameInfo view={view} dealerSeat={dealerSeat} minSize={layout.centerInfoMinSize} />
 
-              <View style={styles.sideDiscards}>
-                <DiscardPile tiles={view.players[rightIdx].discards} size="xs" />
+              <View style={[styles.sideDiscards, { maxWidth: layout.sideDiscardMaxWidth }]}>
+                <DiscardPile tiles={view.players[rightIdx].discards} size={layout.opponentTileSize} />
               </View>
             </View>
 
             <View style={styles.bottomDiscards}>
               <DiscardPile
                 tiles={view.players[mySeat].discards}
-                size="xs"
+                size={layout.opponentTileSize}
                 lastDiscard={view.lastDiscard?.tileId}
               />
             </View>
           </View>
 
           {/* RIGHT PLAYER */}
-          <View style={styles.rightPlayerArea}>
+          <View style={[styles.rightPlayerArea, { width: layout.sidePlayerWidth }]}>
             <PlayerPanel
               name={view.players[rightIdx].name}
               score={view.players[rightIdx].score}
@@ -406,7 +408,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
             <View style={styles.verticalHand}>
               {Array.from({ length: view.players[rightIdx].handCount }).map(
                 (_, i) => (
-                  <BackTile key={i} size="xs" />
+                  <BackTile key={i} size={layout.opponentTileSize} />
                 )
               )}
             </View>
@@ -416,7 +418,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
         {/* ====== BOTTOM PLAYER (ME) ====== */}
         <View style={styles.bottomArea}>
           <View style={styles.myMeldsRow}>
-            <MeldView melds={view.players[mySeat].melds} size="sm" />
+            <MeldView melds={view.players[mySeat].melds} size={layout.meldTileSize} />
           </View>
 
           <View style={styles.myHandRow}>
@@ -438,7 +440,7 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
                 tiles={view.myHand}
                 onDiscard={handleDiscard}
                 interactive={interactive}
-                size="md"
+                size={layout.handTileSize}
               />
             </View>
 
@@ -591,7 +593,6 @@ const styles = StyleSheet.create({
   // TOP AREA
   topArea: {
     paddingTop: 6,
-    paddingHorizontal: 60,
     alignItems: "center",
   },
   topPlayerRow: {
@@ -617,8 +618,7 @@ const styles = StyleSheet.create({
   leftPlayerArea: {
     alignItems: "center",
     justifyContent: "center",
-    width: 60,
-    gap: 6,
+    gap: 4,
   },
   verticalHand: {
     flexDirection: "column",
@@ -628,8 +628,7 @@ const styles = StyleSheet.create({
   rightPlayerArea: {
     alignItems: "center",
     justifyContent: "center",
-    width: 60,
-    gap: 6,
+    gap: 4,
   },
   centerTable: {
     flex: 1,
@@ -644,7 +643,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  sideDiscards: { maxWidth: 100, alignItems: "center" },
+  sideDiscards: { alignItems: "center" },
   bottomDiscards: { marginTop: 4 },
 
   // BOTTOM AREA
