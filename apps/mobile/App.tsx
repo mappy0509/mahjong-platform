@@ -17,7 +17,7 @@ import { registerForPushNotifications } from "./src/utils/notifications";
 type Screen =
   | { type: "menu" }
   | { type: "demo" }
-  | { type: "lobby" }
+  | { type: "lobby"; initialClubId?: string }
   | { type: "game"; roomId: string }
   | { type: "privacy" }
   | { type: "terms" }
@@ -76,6 +76,7 @@ export default function App() {
               <LobbyScreen
                 onBack={() => setScreen({ type: "menu" })}
                 onJoinRoom={(roomId) => setScreen({ type: "game", roomId })}
+                initialClubId={screen.initialClubId}
               />
             );
           case "game":
@@ -131,7 +132,9 @@ export default function App() {
                 onSettings={() => setScreen({ type: "settings" })}
                 onPrivacy={() => setScreen({ type: "privacy" })}
                 onTerms={() => setScreen({ type: "terms" })}
-                onJoinClubAndOpenLobby={() => setScreen({ type: "lobby" })}
+                onOpenClubLobby={(clubId) =>
+                  setScreen({ type: "lobby", initialClubId: clubId })
+                }
               />
             );
         }

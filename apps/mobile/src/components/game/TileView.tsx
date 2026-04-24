@@ -97,7 +97,7 @@ function tileKindFromId(id: number): number {
 //  3D TILE VIEW COMPONENT
 // ============================================================
 
-export function TileView({
+function TileViewInner({
   tileId,
   onPress,
   selected = false,
@@ -283,11 +283,14 @@ export function TileView({
   return tile;
 }
 
+// Memoized TileView: 56+ tiles re-render every turn without this.
+export const TileView = React.memo(TileViewInner);
+
 // ============================================================
 //  BACK TILE (standalone face-down tile)
 // ============================================================
 
-export function BackTile({ size = "sm" }: { size?: TileSize }) {
+function BackTileInner({ size = "sm" }: { size?: TileSize }) {
   const sz = SIZES[size];
   const depth = sz.depth;
 
@@ -354,6 +357,8 @@ export function BackTile({ size = "sm" }: { size?: TileSize }) {
     </View>
   );
 }
+
+export const BackTile = React.memo(BackTileInner);
 
 // ============================================================
 //  TILE FACE COMPONENTS

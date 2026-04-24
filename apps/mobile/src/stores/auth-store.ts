@@ -1,11 +1,14 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
 
+type AuthSubscription = { unsubscribe: () => void } | null;
+
 interface AuthState {
   isLoggedIn: boolean;
   user: { id: string; username: string; displayName: string } | null;
   isLoading: boolean;
   error: string | null;
+  _authSub: AuthSubscription;
   init: () => Promise<void>;
   login: (username: string, password: string) => Promise<void>;
   register: (
@@ -35,11 +38,12 @@ async function fetchProfile(userId: string) {
   };
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   isLoggedIn: false,
   user: null,
   isLoading: true,
   error: null,
+  _authSub: null,
 
   init: async () => {
     try {
@@ -58,8 +62,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ isLoggedIn: false, user: null, isLoading: false });
     }
 
-    // Listen for auth state changes (token refresh, sign out, etc.)
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    // Tear down any previously-registered listener before attaching a new one
+    // (avoids duplicate subscriptions on Fast Refresh / re-init).
+    const prev = get()._authSub;
+    if (prev) {
+      try { prev.unsubscribe(); } catch { /* noop */ }
+    }
+
+    const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_OUT") {
         set({ isLoggedIn: false, user: null });
       } else if (event === "TOKEN_REFRESHED" && session?.user) {
@@ -69,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
       }
     });
+    set({ _authSub: data.subscription });
   },
 
   login: async (username, password) => {

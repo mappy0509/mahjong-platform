@@ -20,6 +20,8 @@ import { useGameStore } from "../stores/game-store";
 interface LobbyScreenProps {
   onBack: () => void;
   onJoinRoom: (roomId: string) => void;
+  /** If provided, open directly into this club's room list on mount. */
+  initialClubId?: string;
 }
 
 type LobbyView =
@@ -27,7 +29,7 @@ type LobbyView =
   | { type: "rooms"; clubId: string; clubName: string }
   | { type: "waiting"; roomId: string; roomName: string; playerCount: 3 | 4 };
 
-export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
+export function LobbyScreen({ onBack, onJoinRoom, initialClubId }: LobbyScreenProps) {
   const { user, logout } = useAuthStore();
   const { joinRoom: gameJoinRoom, readyUp, subscribe } = useGameStore();
   const [lobbyView, setLobbyView] = useState<LobbyView>({ type: "clubs" });
@@ -43,8 +45,24 @@ export function LobbyScreen({ onBack, onJoinRoom }: LobbyScreenProps) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    loadClubs();
-  }, []);
+    (async () => {
+      await loadClubs();
+      if (initialClubId) {
+        // Jump straight into this club's room list so the user doesn't have
+        // to re-select a club they just tapped from the home screen.
+        const { data: club } = await supabase
+          .from("clubs")
+          .select("id, name")
+          .eq("id", initialClubId)
+          .maybeSingle();
+        if (club) {
+          setLobbyView({ type: "rooms", clubId: club.id, clubName: club.name });
+          loadRooms(club.id);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialClubId]);
 
   // Subscribe to room updates when in waiting room
   useEffect(() => {

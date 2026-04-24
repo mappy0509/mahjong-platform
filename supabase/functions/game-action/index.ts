@@ -191,40 +191,45 @@ Deno.serve(async (req) => {
     const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
     const playerNames = (participants ?? []).map((p: any) => nameMap.get(p.user_id) ?? `Player ${p.seat + 1}`);
 
-    // Update all 4 player views
-    for (const p of (participants ?? [])) {
-      const view = machine.getPlayerView(p.seat as 0 | 1 | 2 | 3, playerNames);
+    // Update all player views in parallel. Previously the 4 UPDATEs ran
+    // sequentially (~4 DB round trips per action); overlapping them roughly
+    // halves the turn latency on phones.
+    const sharedResultFields = action === NEXT_ROUND
+      ? {
+          round_result: null,
+          final_result: finalResult ? JSON.parse(JSON.stringify(finalResult)) : null,
+        }
+      : {
+          ...(roundResult ? { round_result: JSON.parse(JSON.stringify(roundResult)) } : {}),
+          ...(finalResult ? { final_result: JSON.parse(JSON.stringify(finalResult)) } : {}),
+        };
 
-      const updateFields: any = {
-        view: JSON.parse(JSON.stringify(view)),
-        version: newVersion,
-      };
-      // On NEXT_ROUND, clear the previous round result and final result
-      if (action === NEXT_ROUND) {
-        updateFields.round_result = null;
-        updateFields.final_result = finalResult ? JSON.parse(JSON.stringify(finalResult)) : null;
-      } else {
-        if (roundResult) updateFields.round_result = JSON.parse(JSON.stringify(roundResult));
-        if (finalResult) updateFields.final_result = JSON.parse(JSON.stringify(finalResult));
-      }
+    await Promise.all(
+      (participants ?? []).map((p: any) => {
+        const view = machine.getPlayerView(p.seat as 0 | 1 | 2 | 3, playerNames);
+        return admin
+          .from("player_views")
+          .update({
+            view: JSON.parse(JSON.stringify(view)),
+            version: newVersion,
+            ...sharedResultFields,
+          })
+          .eq("room_id", roomId)
+          .eq("seat_index", p.seat);
+      }),
+    );
 
-      await admin
-        .from("player_views")
-        .update(updateFields)
-        .eq("room_id", roomId)
-        .eq("seat_index", p.seat);
-    }
-
-    // Log events using state.eventSequence for unique sequence numbers
+    // Log events in one batched insert (was N sequential inserts).
     const baseSeq = newState.eventSequence - events.length;
-    for (let i = 0; i < events.length; i++) {
+    const eventRows = events.map((e: any, i: number) => ({
+      room_id: roomId,
+      sequence: baseSeq + i + 1,
+      event_type: e.type,
+      payload: JSON.parse(JSON.stringify(e)),
+    }));
+    if (eventRows.length > 0) {
       try {
-        await admin.from("game_event_logs").insert({
-          room_id: roomId,
-          sequence: baseSeq + i + 1,
-          event_type: events[i].type,
-          payload: JSON.parse(JSON.stringify(events[i])),
-        });
+        await admin.from("game_event_logs").insert(eventRows);
       } catch {
         // Best-effort logging — ignore conflicts
       }

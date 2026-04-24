@@ -303,7 +303,13 @@ export function GameTableScreen({ roomId, onBack }: GameTableScreenProps) {
         {/* Connection indicator */}
         {!isConnected && (
           <View style={styles.disconnectBanner}>
-            <Text style={styles.disconnectText}>接続が切断されました - 再接続中...</Text>
+            <Text style={styles.disconnectText}>接続が切断されました</Text>
+            <TouchableOpacity
+              style={styles.reconnectBtn}
+              onPress={() => subscribe(roomId)}
+            >
+              <Text style={styles.reconnectBtnText}>再接続</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -572,9 +578,22 @@ const styles = StyleSheet.create({
     zIndex: 20,
     backgroundColor: "rgba(198, 40, 40, 0.9)",
     paddingVertical: 4,
+    paddingHorizontal: 12,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
   },
   disconnectText: { color: "#fff", fontSize: 12 },
+  reconnectBtn: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  reconnectBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 
   // Back button
   backBtn: {

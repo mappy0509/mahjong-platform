@@ -102,15 +102,15 @@ export function RoundResultModal({
               </View>
             ))}
 
-            {/* Score changes for all players */}
+            {/* Score changes for all players (variable count for 3p/4p) */}
             <View style={styles.changesSection}>
               <Text style={styles.changesTitle}>点数変動</Text>
-              {[0, 1, 2, 3].map((seat) => {
+              {playerNames.map((name, seat) => {
                 const change = scoreChanges[seat] || 0;
                 return (
                   <View key={seat} style={styles.changeRow}>
                     <Text style={styles.changeName}>
-                      {WIND_NAMES[seat]} {playerNames[seat]}
+                      {WIND_NAMES[seat]} {name}
                     </Text>
                     <Text
                       style={[

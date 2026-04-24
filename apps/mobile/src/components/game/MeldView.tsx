@@ -9,7 +9,7 @@ interface MeldViewProps {
   size?: TileSize;
 }
 
-export function MeldView({ melds, size = "sm" }: MeldViewProps) {
+function MeldViewInner({ melds, size = "sm" }: MeldViewProps) {
   if (melds.length === 0) return null;
 
   return (
@@ -36,6 +36,8 @@ export function MeldView({ melds, size = "sm" }: MeldViewProps) {
     </View>
   );
 }
+
+export const MeldView = React.memo(MeldViewInner);
 
 const styles = StyleSheet.create({
   container: {

@@ -13,11 +13,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // This endpoint is called by pg_cron or admin — verify service key
-    const authHeader = req.headers.get("Authorization");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!authHeader?.includes(serviceKey ?? "___impossible___")) {
-      // Allow calling from cron without auth header via internal URL
+    // Only pg_cron (or manual ops with the service role key) may call this.
+    // The service role key is held inside the database and passed back by
+    // the cron job; a normal anon / user JWT must be rejected because this
+    // endpoint bypasses RLS and mutates any game session.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const expected = `Bearer ${serviceKey}`;
+    if (!serviceKey || authHeader !== expected) {
+      return errorResponse("Unauthorized", 401);
     }
 
     const admin = getSupabaseAdmin();

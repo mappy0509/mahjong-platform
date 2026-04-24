@@ -20,7 +20,7 @@ const ROTATION: Record<DiscardPosition, string> = {
   left: "90deg",    // left player — tile tops point toward left player
 };
 
-export function DiscardPile({
+function DiscardPileInner({
   tiles,
   size = "xs",
   lastDiscard,
@@ -56,6 +56,8 @@ export function DiscardPile({
     </View>
   );
 }
+
+export const DiscardPile = React.memo(DiscardPileInner);
 
 const styles = StyleSheet.create({
   container: {

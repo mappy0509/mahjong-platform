@@ -30,7 +30,11 @@ interface HomeScreenProps {
   onSettings: () => void;
   onPrivacy: () => void;
   onTerms: () => void;
-  onJoinClubAndOpenLobby: () => void;
+  /**
+   * Open the lobby for a specific club. Receives the club id so the lobby
+   * can skip the club-picker step and go straight to the room list.
+   */
+  onOpenClubLobby: (clubId: string) => void;
 }
 
 interface ClubPreview {
@@ -47,7 +51,7 @@ export function HomeScreen({
   onSettings,
   onPrivacy,
   onTerms,
-  onJoinClubAndOpenLobby,
+  onOpenClubLobby,
 }: HomeScreenProps) {
   const { isLoggedIn, isLoading, user, login, register, logout, error } = useAuthStore();
   const { width } = useWindowDimensions();
@@ -615,7 +619,7 @@ export function HomeScreen({
                             <Text style={styles.clubMiniBtnGoldText}>招待</Text>
                           </Pressable>
                           <Pressable
-                            onPress={onJoinClubAndOpenLobby}
+                            onPress={() => onOpenClubLobby(club.id)}
                             style={({ pressed }) => [
                               styles.clubMiniBtn,
                               pressed && styles.clubMiniBtnPressed,

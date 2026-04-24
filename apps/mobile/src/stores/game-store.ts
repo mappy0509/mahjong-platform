@@ -60,10 +60,22 @@ export const useGameStore = create<GameState>((set, get) => ({
   _roomId: null,
 
   subscribe: async (roomId: string) => {
-    // Clean up existing subscription
+    // Clean up existing subscription AND stale view state so a freshly joined
+    // room never flashes the previous room's board while the first realtime
+    // update is in flight.
     const existing = get()._channel;
+    const prevRoomId = get()._roomId;
     if (existing) {
       supabase.removeChannel(existing);
+    }
+    if (prevRoomId !== roomId) {
+      set({
+        view: null,
+        roundResult: null,
+        finalResult: null,
+        lastStamp: null,
+        error: null,
+      });
     }
 
     const {
