@@ -18,3 +18,17 @@ redis-stable.tar.gz
 # Temp files
 lsof_output.txt
 .vercel
+
+# renewal
+tools/oracle/.venv
+tools/**/node_modules
+*.tsbuildinfo
+.next
+cases.json
+
+# local dev database
+.localdb/
+
+tools/e2e/out
+
+録画/

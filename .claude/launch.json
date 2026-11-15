@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mj-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "/Users/masahiroyamamoto/Projects/unfinish_app/麻雀ゲーム/apps/web", "dev"],
+      "port": 3100
+    },
+    {
+      "name": "mj-table-server",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "/Users/masahiroyamamoto/Projects/unfinish_app/麻雀ゲーム/apps/table-server", "start"],
+      "port": 8787
+    }
+  ]
+}

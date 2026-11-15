@@ -1,0 +1,92 @@
+/* 対局の演出。色は --fx（主色）と --fx2（副色）で格ごとに変える。 */
+.fx-root { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 40; }
+.fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* ---- 鳴きの吹き出し ---- */
+.fx-callout { position: absolute; transform: translate(-50%, -50%); font-family: var(--font-display); font-weight: 800; font-size: clamp(34px, 7vh, 76px); color: #fff; letter-spacing: .06em; white-space: nowrap;
+  text-shadow: 0 0 2px #000, 0 3px 0 var(--fx2), 0 0 26px var(--fx), 0 0 60px var(--fx);
+  animation: fx-callout .95s cubic-bezier(.2,.9,.2,1) both; }
+.fx-callout::before { content: ''; position: absolute; left: 50%; top: 50%; width: 3.4em; height: 3.4em; transform: translate(-50%,-50%); border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--fx) 55%, transparent) 0%, transparent 62%); z-index: -1; animation: fx-pop .95s ease-out both; }
+.fx-callout::after { content: ''; position: absolute; left: -22%; right: -22%; top: 52%; height: .16em; background: linear-gradient(90deg, transparent, var(--fx), #fff, var(--fx), transparent); transform: skewX(-24deg) scaleX(0); animation: fx-slash .5s .05s ease-out both; }
+@keyframes fx-callout { 0% { opacity: 0; transform: translate(-50%,-50%) scale(2.2) skewX(-14deg); filter: blur(6px); } 16% { opacity: 1; transform: translate(-50%,-50%) scale(.94) skewX(-8deg); filter: none; } 26% { transform: translate(-50%,-50%) scale(1.04) skewX(-8deg); } 78% { opacity: 1; transform: translate(-50%,-50%) scale(1) skewX(-8deg); } 100% { opacity: 0; transform: translate(-50%,-62%) scale(1.06) skewX(-8deg); } }
+@keyframes fx-pop { 0% { transform: translate(-50%,-50%) scale(.2); opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1.5); opacity: 0; } }
+@keyframes fx-slash { 0% { transform: skewX(-24deg) scaleX(0); opacity: 1; } 70% { transform: skewX(-24deg) scaleX(1); opacity: 1; } 100% { transform: skewX(-24deg) scaleX(1.1); opacity: 0; } }
+
+/* ---- 立直 ---- */
+.fx-riichi { position: absolute; left: 0; right: 0; height: clamp(70px, 17vh, 150px); transform: translateY(-50%); display: flex; align-items: center; justify-content: center; animation: fx-band 1.05s ease-out both; }
+.fx-riichi .band { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(8,14,26,.94) 16%, rgba(14,30,58,.96) 50%, rgba(8,14,26,.94) 84%, transparent 100%); border-top: 2px solid #9ad4ff; border-bottom: 2px solid #9ad4ff; box-shadow: 0 0 40px rgba(90,184,255,.55); transform: skewY(-2.2deg); }
+.fx-riichi .streak { position: absolute; top: 0; bottom: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent); transform: skewX(-30deg); animation: fx-streak .55s .08s ease-out both; mix-blend-mode: screen; }
+.fx-riichi .txt { position: relative; font-family: var(--font-display); font-weight: 800; font-size: clamp(44px, 11vh, 104px); letter-spacing: .28em; padding-left: .28em; color: #fff; text-shadow: 0 0 3px #001, 0 4px 0 #1c4f8f, 0 0 34px #5ab8ff, 0 0 80px #5ab8ff; animation: fx-rtxt 1.05s cubic-bezier(.2,.9,.2,1) both; }
+.fx-riichi .stick { position: absolute; left: 50%; bottom: 12%; width: min(46vw, 420px); height: 10px; margin-left: calc(min(46vw, 420px) / -2); border-radius: 6px; background: #f5f2ea; box-shadow: 0 0 18px #9ad4ff; animation: fx-stick .6s .2s ease-out both; }
+.fx-riichi .stick::after { content: ''; position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -4.5px; border-radius: 50%; background: #d92b3a; }
+@keyframes fx-band { 0% { opacity: 0; clip-path: inset(48% 0 48% 0); } 14% { opacity: 1; clip-path: inset(0); } 82% { opacity: 1; } 100% { opacity: 0; clip-path: inset(46% 0 46% 0); } }
+@keyframes fx-streak { 0% { left: -45%; } 100% { left: 105%; } }
+@keyframes fx-rtxt { 0% { transform: translateX(-34vw) skewX(-20deg); opacity: 0; } 18% { transform: translateX(1.5vw) skewX(-6deg); opacity: 1; } 80% { transform: translateX(-1vw) skewX(-6deg); opacity: 1; } 100% { transform: translateX(26vw) skewX(-20deg); opacity: 0; } }
+@keyframes fx-stick { 0% { transform: scaleX(0); opacity: 0; } 100% { transform: scaleX(1); opacity: 1; } }
+
+/* ---- 和了の一撃（ロン・ツモ）---- */
+.fx-strike { position: absolute; inset: 0; animation: fx-strike-out var(--dur) linear both; }
+.fx-strike .flash { position: absolute; inset: 0; background: radial-gradient(circle at var(--ox) var(--oy), #fff 0%, var(--fx) 28%, transparent 70%); animation: fx-flash .55s ease-out both; mix-blend-mode: screen; }
+.fx-strike .dark { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.25), rgba(0,0,0,.78)); animation: fx-dark var(--dur) ease-out both; }
+.fx-strike .rays { position: absolute; left: var(--ox); top: var(--oy); width: 260vmax; height: 260vmax; margin: -130vmax; background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--fx) 70%, transparent) 0deg 3deg, transparent 3deg 11deg); mask-image: radial-gradient(circle, #000 0%, transparent 46%); -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 46%); animation: fx-rays var(--dur) ease-out both; mix-blend-mode: screen; }
+.fx-strike .ring { position: absolute; left: var(--ox); top: var(--oy); width: 20vmin; height: 20vmin; margin: -10vmin; border-radius: 50%; border: 6px solid #fff; box-shadow: 0 0 40px var(--fx), inset 0 0 30px var(--fx); animation: fx-ring .9s cubic-bezier(.1,.7,.2,1) both; }
+.fx-strike .ring:nth-of-type(2) { animation-delay: .12s; border-color: var(--fx); }
+.fx-strike .ring:nth-of-type(3) { animation-delay: .26s; border-color: var(--fx2); }
+.fx-strike .slash { position: absolute; left: -20%; right: -20%; top: 50%; height: clamp(8px, 2.4vh, 22px); background: linear-gradient(90deg, transparent, var(--fx) 20%, #fff 50%, var(--fx) 80%, transparent); transform: rotate(-12deg) scaleX(0); animation: fx-bigslash .5s .04s cubic-bezier(.1,.8,.2,1) both; box-shadow: 0 0 50px var(--fx); }
+.fx-strike .slash.b { transform: rotate(9deg) scaleX(0); animation-name: fx-bigslash2; animation-delay: .16s; height: clamp(4px, 1.2vh, 12px); }
+.fx-strike .word { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%); font-family: var(--font-display); font-weight: 800; font-size: clamp(110px, 38vh, 380px); line-height: 1; letter-spacing: .04em; white-space: nowrap; color: #fff;
+  -webkit-text-stroke: 2px rgba(0,0,0,.55);
+  text-shadow: 0 6px 0 var(--fx2), 0 12px 0 rgba(0,0,0,.5), 0 0 40px var(--fx), 0 0 120px var(--fx), -8px 0 0 color-mix(in srgb, var(--fx) 60%, transparent), 8px 0 0 color-mix(in srgb, var(--fx2) 60%, transparent);
+  animation: fx-word var(--dur) cubic-bezier(.15,.9,.2,1) both; }
+.fx-strike .word span { display: inline-block; animation: fx-char .5s cubic-bezier(.2,1.6,.3,1) both; }
+.fx-strike .word span:nth-child(2) { animation-delay: .09s; }
+.fx-strike .bolt { position: absolute; top: -5%; width: 12vw; height: 110%; background: linear-gradient(180deg, transparent, #fff 30%, var(--fx) 60%, transparent); clip-path: polygon(48% 0, 62% 22%, 44% 30%, 70% 55%, 40% 62%, 58% 100%, 30% 66%, 52% 58%, 26% 34%, 46% 26%, 34% 0); animation: fx-bolt .5s steps(3) both; mix-blend-mode: screen; opacity: 0; }
+.fx-strike .flame { position: absolute; left: 0; right: 0; bottom: -10%; height: 70%; background: radial-gradient(ellipse at 50% 100%, var(--fx) 0%, color-mix(in srgb, var(--fx2) 70%, transparent) 35%, transparent 70%); filter: blur(18px); mix-blend-mode: screen; animation: fx-flame var(--dur) ease-out both; }
+@keyframes fx-strike-out { 0%, 86% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-dark { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-rays { 0% { transform: rotate(0) scale(.2); opacity: 0; } 12% { opacity: 1; } 100% { transform: rotate(50deg) scale(1.15); opacity: 0; } }
+@keyframes fx-ring { 0% { transform: scale(.1); opacity: 1; } 100% { transform: scale(11); opacity: 0; border-width: 1px; } }
+@keyframes fx-bigslash { 0% { transform: rotate(-12deg) scaleX(0); opacity: 1; } 55% { transform: rotate(-12deg) scaleX(1); opacity: 1; } 100% { transform: rotate(-12deg) scaleX(1.05) scaleY(.1); opacity: 0; } }
+@keyframes fx-bigslash2 { 0% { transform: rotate(9deg) scaleX(0); opacity: 1; } 55% { transform: rotate(9deg) scaleX(1); opacity: 1; } 100% { transform: rotate(9deg) scaleX(1.05) scaleY(.1); opacity: 0; } }
+@keyframes fx-word { 0% { opacity: 0; transform: translate(-50%,-50%) scale(3.4) rotate(-7deg); filter: blur(14px); } 13% { opacity: 1; transform: translate(-50%,-50%) scale(.9) rotate(-5deg); filter: none; } 20% { transform: translate(-50%,-50%) scale(1.07) rotate(-5deg); } 26% { transform: translate(-50%,-50%) scale(1) rotate(-5deg); } 84% { opacity: 1; transform: translate(-50%,-50%) scale(1.04) rotate(-5deg); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.5) rotate(-5deg); filter: blur(8px); } }
+@keyframes fx-char { 0% { transform: translateY(-40%) scale(1.6); } 100% { transform: none; } }
+@keyframes fx-bolt { 0% { opacity: 0; } 20% { opacity: 1; } 40% { opacity: .2; } 60% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-flame { 0% { transform: translateY(40%) scaleY(.4); opacity: 0; } 20% { opacity: .95; transform: none; } 80% { opacity: .8; transform: scaleY(1.15); } 100% { opacity: 0; transform: scaleY(1.3); } }
+
+/* ---- 放銃 ---- */
+.fx-dealin { position: absolute; inset: 0; animation: fx-dealin 1.5s ease-out both; background: radial-gradient(ellipse at 50% 50%, transparent 35%, rgba(190,10,30,.75) 100%); }
+.fx-dealin::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(115deg, transparent 0 46px, rgba(255,60,80,.16) 46px 48px); animation: fx-glitch .14s steps(2) 6; }
+.fx-dealin .crack { position: absolute; left: 50%; bottom: 0; width: 70vmin; height: 70vmin; margin-left: -35vmin; background:
+  linear-gradient(72deg, transparent 49.4%, #fff 49.7%, #ff5a6e 50.2%, transparent 50.6%),
+  linear-gradient(98deg, transparent 49.5%, #fff 49.8%, #ff5a6e 50.2%, transparent 50.5%),
+  linear-gradient(121deg, transparent 49.5%, #fff 49.8%, #ff5a6e 50.2%, transparent 50.5%),
+  linear-gradient(48deg, transparent 49.6%, #ffb0ba 49.9%, transparent 50.3%);
+  mask-image: radial-gradient(circle at 50% 100%, #000 0%, transparent 72%); -webkit-mask-image: radial-gradient(circle at 50% 100%, #000 0%, transparent 72%); animation: fx-crack 1.5s ease-out both; }
+@keyframes fx-dealin { 0% { opacity: 0; } 8% { opacity: 1; } 60% { opacity: .8; } 100% { opacity: 0; } }
+@keyframes fx-glitch { 0% { transform: translateX(-6px); } 100% { transform: translateX(6px); } }
+@keyframes fx-crack { 0% { transform: scale(.2); opacity: 0; } 12% { transform: scale(1); opacity: 1; } 100% { opacity: 0; } }
+
+/* ---- 局の開始・流局の帯 ---- */
+.fx-banner { position: absolute; left: 0; right: 0; top: 40%; transform: translateY(-50%); text-align: center; animation: fx-bnr 1.5s ease-out both; }
+.fx-banner .line { height: 2px; margin: 0 auto; width: min(70vw, 760px); background: linear-gradient(90deg, transparent, var(--color-gold), transparent); animation: fx-line 1.5s ease-out both; }
+.fx-banner .t { font-family: var(--font-display); font-weight: 800; font-size: clamp(46px, 13vh, 120px); letter-spacing: .3em; padding-left: .3em; color: #fff7dc; text-shadow: 0 0 30px rgba(231,194,106,.9), 0 4px 0 #6b531c; line-height: 1.25; }
+.fx-banner .s { font-size: clamp(14px, 3vh, 24px); letter-spacing: .4em; color: var(--color-gold2); margin-bottom: 6px; }
+.fx-banner::before { content: ''; position: absolute; inset: -40% 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,.6) 35%, rgba(0,0,0,.6) 65%, transparent); z-index: -1; }
+@keyframes fx-bnr { 0% { opacity: 0; letter-spacing: .6em; } 16% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-line { 0% { transform: scaleX(0); } 24% { transform: scaleX(1); } 100% { transform: scaleX(1); } }
+
+/* ---- スタンプ ---- */
+.fx-stamp { position: absolute; transform: translate(-50%,-50%); padding: 8px 16px; border-radius: 14px; background: linear-gradient(180deg, #fffdf5, #f1e6c6); color: #2a2210; font-weight: 900; font-size: clamp(14px, 3.2vh, 22px); box-shadow: 0 6px 20px rgba(0,0,0,.5), 0 0 0 2px #c9a45a; animation: fx-stamp 2.2s cubic-bezier(.2,1.5,.3,1) both; white-space: nowrap; }
+@keyframes fx-stamp { 0% { opacity: 0; transform: translate(-50%,-30%) scale(.4) rotate(-8deg); } 10% { opacity: 1; transform: translate(-50%,-50%) scale(1) rotate(-3deg); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-70%) scale(.95) rotate(-3deg); } }
+
+/* ---- 結果画面 ---- */
+@keyframes rs-in { 0% { opacity: 0; transform: translateY(18px) scale(.98); } 100% { opacity: 1; transform: none; } }
+@keyframes rs-row { 0% { opacity: 0; transform: translateX(-26px); } 100% { opacity: 1; transform: none; } }
+@keyframes rs-stamp { 0% { opacity: 0; transform: scale(3.2) rotate(-18deg); filter: blur(8px); } 55% { opacity: 1; transform: scale(.92) rotate(-9deg); filter: none; } 72% { transform: scale(1.06) rotate(-9deg); } 100% { opacity: 1; transform: scale(1) rotate(-9deg); } }
+@keyframes rs-shine { 0% { background-position: -160% 0; } 100% { background-position: 260% 0; } }
+@keyframes rs-tile { 0% { opacity: 0; transform: translateY(-22px) rotateX(70deg); } 100% { opacity: 1; transform: none; } }
+@keyframes rs-rays { to { transform: rotate(360deg); } }
+@keyframes rs-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.rs-shine { background-image: linear-gradient(100deg, var(--c1) 0%, var(--c1) 38%, #fff 50%, var(--c1) 62%, var(--c1) 100%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: rs-shine 2.4s linear infinite; }
